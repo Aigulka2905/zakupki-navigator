@@ -106,20 +106,17 @@ const HistoryPage = () => {
   });
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">История запросов</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Журнал всех чатов, проверок и анализа документов
-            </p>
-          </div>
-          <Button variant="outline" size="sm" className="gap-2">
-            <Download className="h-4 w-4" />
-            Экспорт в CSV
-          </Button>
-        </div>
+    <AppLayout
+      title="История запросов"
+      subtitle="Журнал чатов, проверок и анализа документов"
+      headerRight={
+        <Button variant="outline" size="sm" className="gap-2">
+          <Download className="h-4 w-4" />
+          <span className="hidden sm:inline">Экспорт</span>
+        </Button>
+      }
+    >
+      <div className="space-y-6 p-4 md:p-6">
 
         <Card className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row">

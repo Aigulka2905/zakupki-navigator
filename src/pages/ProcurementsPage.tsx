@@ -140,20 +140,17 @@ const ProcurementsPage = () => {
   };
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">Активные закупки</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Реестр закупок с дедлайнами и статусами
-            </p>
-          </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            Новая закупка
-          </Button>
-        </div>
+    <AppLayout
+      title="Активные закупки"
+      subtitle="Реестр закупок с дедлайнами и статусами"
+      headerRight={
+        <Button size="sm" className="gap-2">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Новая закупка</span>
+        </Button>
+      }
+    >
+      <div className="space-y-6 p-4 md:p-6">
 
         {/* Сводка */}
         <div className="grid gap-3 sm:grid-cols-4">

@@ -129,20 +129,17 @@ const TemplatesPage = () => {
   });
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">Шаблоны документов</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Готовые формы для закупочной деятельности по 223-ФЗ
-            </p>
-          </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            Загрузить шаблон
-          </Button>
-        </div>
+    <AppLayout
+      title="Шаблоны документов"
+      subtitle="Готовые формы для закупочной деятельности по 223-ФЗ"
+      headerRight={
+        <Button size="sm" className="gap-2">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Загрузить</span>
+        </Button>
+      }
+    >
+      <div className="space-y-6 p-4 md:p-6">
 
         {/* Поиск */}
         <div className="relative">

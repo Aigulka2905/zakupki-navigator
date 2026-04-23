@@ -42,14 +42,8 @@ const SettingsPage = () => {
   };
 
   return (
-    <AppLayout>
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Настройки</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Управление профилем, организацией и интеграциями
-          </p>
-        </div>
+    <AppLayout title="Настройки" subtitle="Профиль, организация и интеграции">
+      <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
 
         {/* Профиль */}
         <Card className="p-6">
