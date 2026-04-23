@@ -7,6 +7,8 @@ import {
   Settings,
   History,
   ShieldCheck,
+  Briefcase,
+  FileText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,8 +27,10 @@ import {
 const mainItems = [
   { title: "Главная", url: "/", icon: LayoutDashboard },
   { title: "Чат с ассистентом", url: "/chat", icon: MessageSquare },
+  { title: "Активные закупки", url: "/procurements", icon: Briefcase },
   { title: "База знаний", url: "/knowledge", icon: BookOpen },
   { title: "Анализ документа", url: "/analysis", icon: FileSearch },
+  { title: "Шаблоны", url: "/templates", icon: FileText },
 ];
 
 const secondaryItems = [
