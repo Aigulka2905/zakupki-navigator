@@ -12,6 +12,7 @@ import {
   Plus,
   Star,
 } from "lucide-react";
+import { Reveal } from "@/components/Reveal";
 
 type Template = {
   id: string;
@@ -25,11 +26,11 @@ type Template = {
 };
 
 const categories = [
-  { id: "all", label: "Все" },
+  { id: "all",        label: "Все" },
   { id: "polozhenie", label: "Положения" },
-  { id: "zayavka", label: "Заявки" },
-  { id: "dogovor", label: "Договоры" },
-  { id: "protokol", label: "Протоколы" },
+  { id: "zayavka",    label: "Заявки" },
+  { id: "dogovor",    label: "Договоры" },
+  { id: "protokol",   label: "Протоколы" },
   { id: "pretenziya", label: "Претензии" },
 ];
 
@@ -112,17 +113,16 @@ const templates: Template[] = [
 
 const formatColors: Record<Template["format"], string> = {
   DOCX: "bg-primary-soft text-primary",
-  PDF: "bg-destructive/10 text-destructive",
+  PDF:  "bg-destructive/10 text-destructive",
   XLSX: "bg-success-soft text-success",
 };
 
 const TemplatesPage = () => {
-  const [query, setQuery] = useState("");
+  const [query, setQuery]               = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
   const filtered = templates.filter((t) => {
-    const matchesQuery =
-      t.title.toLowerCase().includes(query.toLowerCase()) ||
+    const matchesQuery    = t.title.toLowerCase().includes(query.toLowerCase()) ||
       t.description.toLowerCase().includes(query.toLowerCase());
     const matchesCategory = activeCategory === "all" || t.category === activeCategory;
     return matchesQuery && matchesCategory;
@@ -139,78 +139,86 @@ const TemplatesPage = () => {
         </Button>
       }
     >
-      <div className="space-y-6 p-4 md:p-6">
+      <div className="space-y-5 p-4 md:p-6">
 
         {/* Поиск */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Поиск шаблонов..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <Reveal direction="up" delay={0}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Поиск шаблонов..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </Reveal>
 
         {/* Категории */}
-        <div className="flex flex-wrap gap-2">
-          {categories.map((c) => (
-            <Button
-              key={c.id}
-              variant={activeCategory === c.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveCategory(c.id)}
-            >
-              {c.label}
-            </Button>
-          ))}
-        </div>
+        <Reveal direction="up" delay={0.06}>
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <Button
+                key={c.id}
+                variant={activeCategory === c.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveCategory(c.id)}
+              >
+                {c.label}
+              </Button>
+            ))}
+          </div>
+        </Reveal>
 
         {/* Сетка шаблонов */}
         {filtered.length === 0 ? (
-          <Card className="p-12 text-center">
-            <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Шаблоны не найдены</p>
-          </Card>
+          <Reveal direction="scale">
+            <Card className="p-12 text-center">
+              <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Шаблоны не найдены</p>
+            </Card>
+          </Reveal>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((t) => (
-              <Card key={t.id} className="flex flex-col p-5 transition-shadow hover:shadow-md">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft">
-                    <FileText className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {t.popular && (
-                      <Badge variant="outline" className="gap-1 text-[11px]">
-                        <Star className="h-3 w-3 fill-warning text-warning" />
-                        Популярный
+            {filtered.map((t, i) => (
+              <Reveal key={t.id} delay={0.1 + i * 0.07} direction="up">
+                <Card className="flex h-full flex-col p-5 transition-all hover:shadow-md hover:-translate-y-0.5">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {t.popular && (
+                        <Badge variant="outline" className="gap-1 text-[11px]">
+                          <Star className="h-3 w-3 fill-warning text-warning" />
+                          Популярный
+                        </Badge>
+                      )}
+                      <Badge className={`text-[11px] ${formatColors[t.format]}`}>
+                        {t.format}
                       </Badge>
-                    )}
-                    <Badge className={`text-[11px] ${formatColors[t.format]}`}>
-                      {t.format}
-                    </Badge>
+                    </div>
                   </div>
-                </div>
-                <h3 className="break-russian font-medium leading-snug text-foreground">
-                  {t.title}
-                </h3>
-                <p className="mt-1.5 flex-1 text-sm text-muted-foreground">{t.description}</p>
-                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Скачиваний: {t.downloads.toLocaleString("ru-RU")}</span>
-                  <span>Обновлён: {t.updated}</span>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1 gap-1.5">
-                    <Eye className="h-3.5 w-3.5" />
-                    Просмотр
-                  </Button>
-                  <Button size="sm" className="flex-1 gap-1.5">
-                    <Download className="h-3.5 w-3.5" />
-                    Скачать
-                  </Button>
-                </div>
-              </Card>
+                  <h3 className="break-russian font-medium leading-snug text-foreground">
+                    {t.title}
+                  </h3>
+                  <p className="mt-1.5 flex-1 text-sm text-muted-foreground">{t.description}</p>
+                  <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Скачиваний: {t.downloads.toLocaleString("ru-RU")}</span>
+                    <span>Обновлён: {t.updated}</span>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1 gap-1.5">
+                      <Eye className="h-3.5 w-3.5" />
+                      Просмотр
+                    </Button>
+                    <Button size="sm" className="flex-1 gap-1.5">
+                      <Download className="h-3.5 w-3.5" />
+                      Скачать
+                    </Button>
+                  </div>
+                </Card>
+              </Reveal>
             ))}
           </div>
         )}

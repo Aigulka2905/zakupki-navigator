@@ -1,8 +1,11 @@
-import { ReactNode } from "react";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { ReactNode, useState } from "react";
 import { AppSidebar } from "./AppSidebar";
-import { Bell, HelpCircle } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
+import { NotificationBell } from "./NotificationBell";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -12,52 +15,84 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, subtitle, headerRight }: AppLayoutProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const { data: currentUser } = useCurrentUser();
+
+  const isCustomer = currentUser?.organization?.orgType === "customer";
+
+  const initials = currentUser?.fullName
+    ? currentUser.fullName.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase()
+    : "ЗК";
+
   return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        <AppSidebar />
+    <div className="flex min-h-screen bg-background">
+      {/* Sidebar */}
+      <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur md:px-6">
-            <SidebarTrigger className="text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-base font-semibold text-foreground md:text-lg">
-                {title}
-              </h1>
-              {subtitle && (
-                <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              {headerRight}
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" aria-label="Помощь">
-                <HelpCircle className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" aria-label="Уведомления">
-                <Bell className="h-4 w-4" />
-              </Button>
-              <div className="ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                АИ
-              </div>
-            </div>
-          </header>
+      {/* Main area */}
+      <div className="flex min-w-0 flex-1 flex-col">
 
-          <main className="flex-1">{children}</main>
+        {/* ── Header ──────────────────────────────────────────── */}
+        <header
+          className={cn(
+            "sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 px-4 md:px-5",
+            "border-b border-border/60 dark:border-white/[0.05]",
+            "bg-background/75 backdrop-blur-xl",
+            "transition-all duration-200",
+          )}
+        >
+          {/* Mobile / Tablet hamburger */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label="Меню"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
 
-          <footer className="border-t border-border bg-card px-4 py-3 md:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5 break-russian">
-                <span className="text-warning">⚠️</span>
-                Информация справочная. Не является юридической консультацией.
-              </div>
-              <div className="flex items-center gap-3">
-                <span>🇷🇺 Данные обрабатываются в РФ</span>
-                <span className="hidden sm:inline">© 2026 Ассистент 223-ФЗ</span>
-              </div>
+          {/* Page title */}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-foreground">
+              {title}
+            </h1>
+            {subtitle && (
+              <p className="truncate text-xs text-muted-foreground/70">{subtitle}</p>
+            )}
+          </div>
+
+          {/* Right controls */}
+          <div className="flex shrink-0 items-center gap-1">
+            {headerRight}
+
+            <ThemeToggle />
+
+            {!isCustomer && <NotificationBell />}
+
+            {/* User avatar */}
+            <div className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-[11px] font-bold text-white shadow-md shadow-indigo-500/30 ring-2 ring-background">
+              {initials}
             </div>
-          </footer>
-        </div>
+          </div>
+        </header>
+
+        {/* ── Content ─────────────────────────────────────────── */}
+        <main className="flex-1">{children}</main>
+
+        {/* ── Footer ──────────────────────────────────────────── */}
+        <footer className="shrink-0 border-t border-border/50 px-4 py-2.5 dark:border-white/[0.04] md:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/50">
+            <span>
+              ⚠ Информация справочная. Не является юридической консультацией.
+            </span>
+            <div className="flex items-center gap-3">
+              <span>🇷🇺 Данные в РФ</span>
+              <span className="hidden sm:inline">© 2026 ZakupkiAI</span>
+            </div>
+          </div>
+        </footer>
       </div>
-    </SidebarProvider>
+    </div>
   );
 }

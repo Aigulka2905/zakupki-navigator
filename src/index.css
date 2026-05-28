@@ -1,42 +1,43 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&subset=cyrillic,cyrillic-ext,latin');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700&display=swap&subset=cyrillic,cyrillic-ext,latin');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* AI Procurement Assistant — Russian 223-FZ
-   Conservative corporate palette, professional SaaS feel.
-   All colors HSL.
-*/
+/* ─────────────────────────────────────────────────────────────
+   ZakupkiAI Design System — Professional Glass-Tech 2026
+   Primary: Indigo #6366F1 / #4F46E5
+   Dark-first. Glassmorphism + soft depth.
+───────────────────────────────────────────────────────────── */
 
 @layer base {
+  /* ── Light theme ────────────────────────────────────────── */
   :root {
-    --background: 210 33% 97%;          /* #F8FAFC */
-    --foreground: 222 47% 11%;
+    --background: 220 22% 96%;       /* #F3F4F9 — soft blue-gray */
+    --foreground: 224 35% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 224 35% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 224 35% 10%;
 
-    /* Deep Blue #1E3A8A — доверие */
-    --primary: 226 64% 33%;
+    /* Indigo */
+    --primary: 244 75% 57%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 226 64% 28%;
-    --primary-soft: 226 64% 96%;
+    --primary-hover: 244 75% 50%;
+    --primary-soft: 238 100% 96%;
 
-    /* Teal #0D9488 — действия */
     --secondary: 173 84% 32%;
     --secondary-foreground: 0 0% 100%;
     --secondary-hover: 173 84% 27%;
     --secondary-soft: 173 60% 95%;
 
-    --muted: 210 30% 95%;
-    --muted-foreground: 215 16% 42%;
+    --muted: 220 16% 91%;
+    --muted-foreground: 220 12% 44%;
 
-    --accent: 226 64% 96%;
-    --accent-foreground: 226 64% 33%;
+    --accent: 238 100% 96%;
+    --accent-foreground: 244 75% 57%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -49,45 +50,86 @@
     --success-foreground: 0 0% 100%;
     --success-soft: 142 60% 94%;
 
-    --border: 215 20% 90%;
-    --input: 215 20% 90%;
-    --ring: 226 64% 33%;
+    --border: 220 16% 86%;
+    --input: 220 16% 86%;
+    --ring: 244 75% 57%;
 
-    --radius: 0.5rem;
+    --radius: 0.625rem;
 
-    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.04);
-    --shadow-card: 0 1px 3px 0 hsl(222 47% 11% / 0.06), 0 1px 2px -1px hsl(222 47% 11% / 0.04);
-    --shadow-elevated: 0 10px 30px -10px hsl(226 64% 33% / 0.15);
+    /* Light shadows — crisp and visible */
+    --shadow-sm:      0 1px 3px 0 hsl(220 20% 50% / 0.10);
+    --shadow-card:    0 1px 4px 0 hsl(220 20% 50% / 0.10),
+                      0 0 0 1px hsl(220 16% 86% / 0.80);
+    --shadow-elevated:0 8px 24px -4px hsl(244 75% 57% / 0.14),
+                      0 2px 6px -2px hsl(220 20% 50% / 0.08);
 
-    /* Sidebar */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 222 30% 25%;
-    --sidebar-primary: 226 64% 33%;
+    /* Sidebar light */
+    --sidebar-background: 220 20% 99%;   /* near-white with blue hint */
+    --sidebar-foreground: 224 25% 22%;
+    --sidebar-primary: 244 75% 57%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 226 64% 96%;
-    --sidebar-accent-foreground: 226 64% 33%;
-    --sidebar-border: 215 20% 92%;
-    --sidebar-ring: 226 64% 33%;
+    --sidebar-accent: 238 100% 96%;
+    --sidebar-accent-foreground: 244 75% 57%;
+    --sidebar-border: 220 16% 88%;
+    --sidebar-ring: 244 75% 57%;
   }
 
+  /* ── Dark theme (default via class="dark" on <html>) ──── */
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 226 70% 60%;
-    --primary-foreground: 222 47% 6%;
+    --background: 224 30% 5%;        /* #090B14 */
+    --foreground: 213 28% 90%;       /* #DDE2EC */
+
+    --card: 224 27% 8%;              /* #0E1120 */
+    --card-foreground: 213 28% 90%;
+
+    --popover: 224 25% 9%;
+    --popover-foreground: 213 28% 90%;
+
+    /* Indigo — brighter in dark */
+    --primary: 239 84% 67%;          /* #6366F1 */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 239 84% 73%;
+    --primary-soft: 238 50% 18%;     /* dark indigo bg */
+
     --secondary: 173 70% 45%;
-    --secondary-foreground: 222 47% 6%;
-    --muted: 217 32% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 32% 17%;
-    --accent-foreground: 210 40% 98%;
-    --border: 217 32% 17%;
-    --input: 217 32% 17%;
-    --ring: 226 70% 60%;
+    --secondary-foreground: 224 30% 5%;
+    --secondary-hover: 173 70% 50%;
+    --secondary-soft: 173 50% 13%;
+
+    --muted: 224 22% 13%;
+    --muted-foreground: 215 14% 52%;
+
+    --accent: 224 22% 13%;
+    --accent-foreground: 213 28% 90%;
+
+    --destructive: 0 70% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 38 92% 8%;
+    --warning-soft: 38 60% 16%;
+
+    --success: 142 65% 42%;
+    --success-foreground: 0 0% 0%;
+    --success-soft: 142 50% 12%;
+
+    --border: 224 20% 13%;
+    --input: 224 20% 13%;
+    --ring: 239 84% 67%;
+
+    --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.4);
+    --shadow-card: 0 2px 8px 0 hsl(0 0% 0% / 0.35), 0 0 0 1px hsl(224 20% 13%);
+    --shadow-elevated: 0 20px 40px -12px hsl(239 84% 67% / 0.22);
+
+    /* Sidebar dark — glass panel */
+    --sidebar-background: 224 28% 6%;
+    --sidebar-foreground: 213 22% 78%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 224 22% 13%;
+    --sidebar-accent-foreground: 239 84% 67%;
+    --sidebar-border: 224 18% 10%;
+    --sidebar-ring: 239 84% 67%;
   }
 }
 
@@ -101,9 +143,8 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-size: 16px;
+    font-size: 15px;
     line-height: 1.5;
-    /* Ensure long Russian compound words wrap gracefully */
     overflow-wrap: break-word;
     word-break: normal;
     hyphens: auto;
@@ -111,15 +152,45 @@
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
+
+  /* Custom scrollbar — subtle dark */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
 }
 
 @layer utilities {
-  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-card    { box-shadow: var(--shadow-card); }
   .shadow-elevated { box-shadow: var(--shadow-elevated); }
-  .text-balance { text-wrap: balance; }
-  /* Allow break on long compound Russian terms like единственный_поставщик */
+  .text-balance   { text-wrap: balance; }
+
+  /* Russian long compound word wrap */
   .break-russian {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  /* Glass panel — light: white with shadow / dark: translucent with rim */
+  .glass {
+    @apply backdrop-blur-xl bg-card/90 border border-border/60;
+    box-shadow: var(--shadow-sm);
+  }
+  .dark .glass {
+    @apply bg-card/80 border-white/[0.06];
+    box-shadow: none;
+  }
+
+  .glass-sidebar {
+    @apply backdrop-blur-2xl bg-sidebar/90;
   }
 }

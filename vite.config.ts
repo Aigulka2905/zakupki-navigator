@@ -7,9 +7,22 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    port: 5173,
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
     hmr: {
       overlay: false,
+    },
+    // 🔗 ПРОКСИ ДЛЯ ПОДКЛЮЧЕНИЯ К БЭКЕНДУ
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+        ws: true, // Поддержка WebSocket для real-time уведомлений
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
@@ -17,6 +30,17 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
+    dedupe: [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "@tanstack/react-query",
+      "@tanstack/query-core"
+    ],
+  },
+  // 🔧 Оптимизация зависимостей для стабильной работы
+  optimizeDeps: {
+    include: ['@tanstack/react-query', '@tanstack/query-core'],
   },
 }));
