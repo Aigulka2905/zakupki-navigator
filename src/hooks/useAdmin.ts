@@ -2,6 +2,29 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import type { AdminUser, AdminStats, SystemInfo } from "@/types/api";
 
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+
+export interface LogEntry {
+  time: number;
+  level: LogLevel;
+  msg: string;
+  err?: { message: string; type?: string; stack?: string };
+  model?: string;
+  provider?: string;
+  reset?: string;
+  balance?: number;
+  threshold?: number;
+  req?: { method: string; url: string };
+  res?: { statusCode: number };
+  [key: string]: unknown;
+}
+
+interface LogsResponse {
+  entries: LogEntry[];
+  total: number;
+  note?: string;
+}
+
 async function fetchAdminUsers(): Promise<AdminUser[]> {
   const { data } = await apiClient.get<AdminUser[]>("/admin/users");
   return data;
@@ -105,5 +128,27 @@ export function useResetFallbackModel() {
     mutationFn: () =>
       apiClient.delete("/admin/ai-fallback-model").then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-ai-usage"] }),
+  });
+}
+
+export function useAdminLogs(params: {
+  level?: string;
+  search?: string;
+  limit?: number;
+} = {}) {
+  const { level, search, limit = 200 } = params;
+  return useQuery<LogsResponse>({
+    queryKey: ["admin-logs", level, search],
+    queryFn: () =>
+      apiClient
+        .get<LogsResponse>("/admin/logs", {
+          params: {
+            ...(level  ? { level }  : {}),
+            ...(search ? { search } : {}),
+            limit,
+          },
+        })
+        .then((r) => r.data),
+    staleTime: 0,
   });
 }

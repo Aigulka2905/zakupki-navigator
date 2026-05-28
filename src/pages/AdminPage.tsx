@@ -29,17 +29,26 @@ import {
   ShieldCheck,
   ServerCog,
   BarChart2,
+  ScrollText,
+  RefreshCw,
+  Search,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   useAdminUsers,
   useAdminStats,
   useSystemInfo,
   useUpdateUserRole,
   useUpdateOrgPlan,
+  useAdminLogs,
 } from "@/hooks/useAdmin";
+import type { LogEntry, LogLevel } from "@/hooks/useAdmin";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
+import { useState, useEffect } from "react";
 
 // ── Role badge ────────────────────────────────────────────────
 
@@ -353,6 +362,240 @@ function ParametersTab() {
   );
 }
 
+// ── Logs tab ──────────────────────────────────────────────────
+
+const LEVEL_OPTIONS = ["all", "error", "warn", "info"] as const;
+type LevelFilter = (typeof LEVEL_OPTIONS)[number];
+
+const LEVEL_LABELS: Record<LevelFilter, string> = {
+  all: "Все",
+  error: "Error",
+  warn: "Warn",
+  info: "Info",
+};
+
+const LEVEL_BADGE: Record<LogLevel, string> = {
+  fatal: "bg-red-600/15 text-red-300 border-red-600/25",
+  error: "bg-red-500/15 text-red-400 border-red-500/25",
+  warn:  "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  info:  "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  debug: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+  trace: "bg-slate-500/10 text-slate-300 border-slate-500/15",
+};
+
+function relTime(ts: number) {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}с`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}м`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}ч`;
+  return new Date(ts).toLocaleDateString("ru-RU", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function formatDetails(entry: LogEntry): string {
+  const lines: string[] = [`Время: ${new Date(entry.time).toLocaleString("ru-RU")}`];
+  if (entry.err) {
+    lines.push(`Ошибка: ${entry.err.message}`);
+    if (entry.err.type)  lines.push(`Тип: ${entry.err.type}`);
+    if (entry.err.stack) lines.push(`\n${entry.err.stack}`);
+  }
+  const skip = new Set(["time", "level", "msg", "err"]);
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(entry)) {
+    if (!skip.has(k) && v !== undefined) extra[k] = v;
+  }
+  if (Object.keys(extra).length > 0) {
+    lines.push(`\n${JSON.stringify(extra, null, 2)}`);
+  }
+  return lines.join("\n");
+}
+
+function LogsTab() {
+  const [level, setLevel]           = useState<LevelFilter>("warn");
+  const [search, setSearch]         = useState("");
+  const [debSearch, setDebSearch]   = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [expanded, setExpanded]     = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useAdminLogs({
+    level:  level === "all" ? undefined : level,
+    search: debSearch || undefined,
+  });
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => void refetch(), 15_000);
+    return () => clearInterval(id);
+  }, [autoRefresh, refetch]);
+
+  const entries = data?.entries ?? [];
+
+  function toggle(idx: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Level buttons */}
+        <div className="flex rounded-md border border-border/60 dark:border-white/[0.06] overflow-hidden">
+          {LEVEL_OPTIONS.map((l) => (
+            <button
+              key={l}
+              onClick={() => setLevel(l)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium transition-colors",
+                level === l
+                  ? "bg-indigo-500/15 text-indigo-400"
+                  : "text-muted-foreground hover:text-foreground dark:hover:bg-white/[0.03]",
+              )}
+            >
+              {LEVEL_LABELS[l]}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            className="h-8 pl-8 text-xs dark:bg-white/[0.02]"
+            placeholder="Поиск..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Auto-refresh */}
+        <button
+          onClick={() => setAutoRefresh((v) => !v)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs border transition-colors",
+            autoRefresh
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              : "border-border/60 dark:border-white/[0.06] text-muted-foreground hover:text-foreground",
+          )}
+          title="Автообновление каждые 15 секунд"
+        >
+          <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} />
+          {autoRefresh ? "Авто 15с" : "Вручную"}
+        </button>
+
+        <button
+          onClick={() => void refetch()}
+          className="flex items-center gap-1.5 rounded-md border border-border/60 dark:border-white/[0.06] px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Обновить
+        </button>
+
+        <span className="text-xs text-muted-foreground ml-auto">
+          {entries.length} записей
+          {dataUpdatedAt ? ` · обновлено ${relTime(dataUpdatedAt)} назад` : ""}
+        </span>
+      </div>
+
+      {/* Note (e.g. file not created yet) */}
+      {data?.note && (
+        <p className="text-xs text-muted-foreground px-1">{data.note}</p>
+      )}
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
+          Загрузка...
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
+          Записей нет
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border/60 dark:border-white/[0.06] bg-white/[0.01]">
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-10" />
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-20">Время</th>
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-16">Уровень</th>
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground">Сообщение</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry, idx) => (
+                <>
+                  <tr
+                    key={idx}
+                    onClick={() => toggle(idx)}
+                    className={cn(
+                      "border-b border-border/60 dark:border-white/[0.04] cursor-pointer transition-colors select-none",
+                      "dark:hover:bg-white/[0.02]",
+                      expanded.has(idx) && "dark:bg-white/[0.025]",
+                    )}
+                  >
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {expanded.has(idx)
+                        ? <ChevronDown className="h-3.5 w-3.5" />
+                        : <ChevronRight className="h-3.5 w-3.5" />}
+                    </td>
+                    <td className="py-2 px-3 text-muted-foreground whitespace-nowrap font-mono">
+                      {relTime(entry.time)}
+                    </td>
+                    <td className="py-2 px-3">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] font-semibold uppercase px-1.5",
+                          LEVEL_BADGE[entry.level] ?? LEVEL_BADGE.debug,
+                        )}
+                      >
+                        {entry.level}
+                      </Badge>
+                    </td>
+                    <td className="py-2 px-3 max-w-0 w-full">
+                      <span className="block truncate text-foreground/90">
+                        {entry.msg}
+                        {entry.err && (
+                          <span className="text-red-400 ml-1.5">
+                            — {entry.err.message}
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {expanded.has(idx) && (
+                    <tr
+                      key={`${idx}-d`}
+                      className="border-b border-border/60 dark:border-white/[0.04] dark:bg-white/[0.015]"
+                    >
+                      <td colSpan={4} className="px-4 py-3">
+                        <pre className="text-[11px] text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed overflow-x-auto">
+                          {formatDetails(entry)}
+                        </pre>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -373,6 +616,10 @@ export default function AdminPage() {
               <BarChart2 className="h-3.5 w-3.5" />
               AI / Расходы
             </TabsTrigger>
+            <TabsTrigger value="logs" className="gap-1.5 text-xs">
+              <ScrollText className="h-3.5 w-3.5" />
+              Логи
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="mt-4">
@@ -385,6 +632,10 @@ export default function AdminPage() {
 
           <TabsContent value="ai" className="mt-4">
             <AdminAiUsageTab />
+          </TabsContent>
+
+          <TabsContent value="logs" className="mt-4">
+            <LogsTab />
           </TabsContent>
         </Tabs>
       </div>
