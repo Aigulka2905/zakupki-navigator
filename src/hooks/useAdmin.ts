@@ -131,6 +131,51 @@ export function useResetFallbackModel() {
   });
 }
 
+export interface AuditUser {
+  id: string;
+  fullName: string;
+  email: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  userId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  changes: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  user: AuditUser | null;
+}
+
+interface AuditResponse {
+  logs: AuditEntry[];
+  total: number;
+}
+
+export function useAdminAudit(params: {
+  userId?: string;
+  category?: string;
+  limit?: number;
+} = {}) {
+  return useQuery<AuditResponse>({
+    queryKey: ["admin-audit", params.userId, params.category],
+    queryFn: () =>
+      apiClient
+        .get<AuditResponse>("/admin/audit", {
+          params: {
+            ...(params.userId   ? { userId: params.userId }     : {}),
+            ...(params.category ? { category: params.category } : {}),
+            limit: params.limit ?? 200,
+          },
+        })
+        .then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+
 export function useAdminLogs(params: {
   level?: string;
   search?: string;

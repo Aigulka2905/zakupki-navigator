@@ -34,6 +34,8 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
+  User,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -43,8 +45,9 @@ import {
   useUpdateUserRole,
   useUpdateOrgPlan,
   useAdminLogs,
+  useAdminAudit,
 } from "@/hooks/useAdmin";
-import type { LogEntry, LogLevel } from "@/hooks/useAdmin";
+import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
@@ -596,6 +599,234 @@ function LogsTab() {
   );
 }
 
+// ── Audit tab ─────────────────────────────────────────────────
+
+const ACTION_CATEGORIES = [
+  { value: "all",          label: "Все действия" },
+  { value: "auth",         label: "Авторизация" },
+  { value: "procurement",  label: "Закупки" },
+  { value: "document",     label: "База знаний" },
+  { value: "org",          label: "Организация" },
+  { value: "analysis",     label: "Анализ" },
+  { value: "admin",        label: "Администр." },
+] as const;
+
+const ACTION_LABELS: Record<string, string> = {
+  "auth.login":                    "Вход в систему",
+  "auth.login_failed":             "Неудачный вход",
+  "auth.email_verified":           "Подтверждение email",
+  "auth.password_reset_requested": "Запрос сброса пароля",
+  "auth.password_reset":           "Сброс пароля",
+  "procurement.create":            "Создание закупки",
+  "procurement.update":            "Изменение закупки",
+  "procurement.delete":            "Удаление закупки",
+  "document.create":               "Добавление документа",
+  "document.update":               "Изменение документа",
+  "document.delete":               "Удаление документа",
+  "org.update":                    "Обновление профиля",
+  "org_document.upload":           "Загрузка документа",
+  "org_document.delete":           "Удаление документа",
+  "analysis.upload":               "Анализ документа",
+  "admin.role_update":             "Изменение роли",
+  "admin.plan_update":             "Изменение тарифа",
+  "admin.model_change":            "Смена AI-модели",
+};
+
+const ACTION_CATEGORY_STYLE: Record<string, string> = {
+  auth:        "bg-slate-500/10 text-slate-400 border-slate-500/20",
+  procurement: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+  document:    "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  org:         "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  org_document:"bg-amber-500/10 text-amber-400 border-amber-500/20",
+  analysis:    "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  admin:       "bg-red-500/10 text-red-400 border-red-500/20",
+};
+
+function actionCategory(action: string) {
+  return action.split(".")[0] ?? "other";
+}
+
+function AuditTab() {
+  const { data: users = [] } = useAdminUsers();
+  const [userId, setUserId]     = useState<string>("");
+  const [category, setCategory] = useState<string>("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const { data, isLoading, refetch, isFetching } = useAdminAudit({
+    userId:   userId   || undefined,
+    category: category === "all" ? undefined : category,
+  });
+
+  const entries = data?.logs ?? [];
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* User filter */}
+        <Select value={userId || "all"} onValueChange={(v) => setUserId(v === "all" ? "" : v)}>
+          <SelectTrigger className="h-8 w-52 text-xs dark:bg-white/[0.02]">
+            <User className="h-3.5 w-3.5 text-muted-foreground mr-1.5" />
+            <SelectValue placeholder="Все пользователи" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все пользователи</SelectItem>
+            {users.map((u) => (
+              <SelectItem key={u.id} value={u.id}>
+                {u.fullName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Category filter */}
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger className="h-8 w-44 text-xs dark:bg-white/[0.02]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ACTION_CATEGORIES.map((c) => (
+              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <button
+          onClick={() => void refetch()}
+          className="flex items-center gap-1.5 rounded-md border border-border/60 dark:border-white/[0.06] px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} />
+          Обновить
+        </button>
+
+        <span className="text-xs text-muted-foreground ml-auto">
+          {data?.total ?? 0} записей
+        </span>
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
+          Загрузка...
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
+          Нет записей
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border/60 dark:border-white/[0.06] bg-white/[0.01]">
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-8" />
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-36">Время</th>
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-44">Пользователь</th>
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground">Действие</th>
+                <th className="py-2 px-3 text-left font-semibold text-muted-foreground w-28 hidden sm:table-cell">
+                  Сущность
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <>
+                  <tr
+                    key={entry.id}
+                    onClick={() => toggle(entry.id)}
+                    className={cn(
+                      "border-b border-border/60 dark:border-white/[0.04] cursor-pointer transition-colors select-none",
+                      "dark:hover:bg-white/[0.02]",
+                      expanded.has(entry.id) && "dark:bg-white/[0.025]",
+                    )}
+                  >
+                    <td className="py-2.5 px-3 text-muted-foreground">
+                      {expanded.has(entry.id)
+                        ? <ChevronDown className="h-3.5 w-3.5" />
+                        : <ChevronRight className="h-3.5 w-3.5" />}
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap font-mono">
+                      {new Date(entry.createdAt).toLocaleString("ru-RU", {
+                        month: "short", day: "numeric",
+                        hour: "2-digit", minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {entry.user ? (
+                        <>
+                          <div className="font-medium leading-tight">{entry.user.fullName}</div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">{entry.user.email}</div>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground italic">Анонимный</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] font-medium",
+                          ACTION_CATEGORY_STYLE[actionCategory(entry.action)] ?? "bg-slate-500/10 text-slate-400",
+                        )}
+                      >
+                        {ACTION_LABELS[entry.action] ?? entry.action}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground hidden sm:table-cell">
+                      {entry.entityType}
+                    </td>
+                  </tr>
+
+                  {expanded.has(entry.id) && (
+                    <tr
+                      key={`${entry.id}-d`}
+                      className="border-b border-border/60 dark:border-white/[0.04] dark:bg-white/[0.015]"
+                    >
+                      <td colSpan={5} className="px-4 py-3">
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
+                          {entry.entityId && (
+                            <>
+                              <dt className="text-muted-foreground">ID сущности</dt>
+                              <dd className="font-mono text-foreground/80">{entry.entityId}</dd>
+                            </>
+                          )}
+                          {entry.ipAddress && (
+                            <>
+                              <dt className="text-muted-foreground">IP</dt>
+                              <dd className="font-mono text-foreground/80">{entry.ipAddress}</dd>
+                            </>
+                          )}
+                          {entry.changes != null && (
+                            <>
+                              <dt className="text-muted-foreground">Изменения</dt>
+                              <dd>
+                                <pre className="font-mono text-foreground/80 whitespace-pre-wrap">
+                                  {JSON.stringify(entry.changes, null, 2)}
+                                </pre>
+                              </dd>
+                            </>
+                          )}
+                        </dl>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -616,6 +847,10 @@ export default function AdminPage() {
               <BarChart2 className="h-3.5 w-3.5" />
               AI / Расходы
             </TabsTrigger>
+            <TabsTrigger value="audit" className="gap-1.5 text-xs">
+              <ClipboardList className="h-3.5 w-3.5" />
+              Аудит
+            </TabsTrigger>
             <TabsTrigger value="logs" className="gap-1.5 text-xs">
               <ScrollText className="h-3.5 w-3.5" />
               Логи
@@ -632,6 +867,10 @@ export default function AdminPage() {
 
           <TabsContent value="ai" className="mt-4">
             <AdminAiUsageTab />
+          </TabsContent>
+
+          <TabsContent value="audit" className="mt-4">
+            <AuditTab />
           </TabsContent>
 
           <TabsContent value="logs" className="mt-4">
