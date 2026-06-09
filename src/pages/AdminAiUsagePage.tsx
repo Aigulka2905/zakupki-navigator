@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useSetActiveModel, useResetActiveModel, useResetModelLimit, useSetFallbackModel, useResetFallbackModel } from "@/hooks/useAdmin";
+import { useSetActiveModel, useResetActiveModel, useResetModelLimit, useSetFallbackModel, useResetFallbackModel, useAiPresetModels } from "@/hooks/useAdmin";
+import type { AiPresetModel } from "@/hooks/useAdmin";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ interface DayPoint {
   date: string;
   totalTokens: number;
   costKopecks: number;
+  cerebrasTokens: number;
   groqTokens: number;
   yandexTokens: number;
 }
@@ -107,22 +109,22 @@ function fmtTokens(n: number) {
 }
 
 function providerColor(p: string) {
-  return p === "yandex" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                        : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+  if (p === "yandex")   return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
+  if (p === "cerebras") return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+  return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+}
+
+function providerBadgeCls(provider: string) {
+  if (provider === "yandex")   return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
+  if (provider === "cerebras") return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+  return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+}
+
+function modelLabel(preset: AiPresetModel) {
+  return `${preset.label} — ${preset.provider}${preset.note ? ` (${preset.note})` : ""}`;
 }
 
 // ── Provider chain status ──────────────────────────────────────
-
-const AI_PRESETS = [
-  // Cerebras — no VPN needed
-  { model: "llama3.3-70b", label: "⚡ Llama 3.3 70B — Cerebras (60K/мин)" },
-  { model: "llama3.1-8b",  label: "⚡ Llama 3.1 8B — Cerebras (60K/мин, быстрый)" },
-  // Groq
-  { model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B — Groq (12K/мин)" },
-  { model: "llama-3.1-8b-instant",    label: "Llama 3.1 8B — Groq (30K/мин)" },
-  { model: "gemma2-9b-it",            label: "Gemma 2 9B — Groq (15K/мин)" },
-  { model: "mixtral-8x7b-32768",      label: "Mixtral 8×7B — Groq (32K ctx)" },
-];
 
 function ProviderChain({ chain, onRefetch }: { chain: ChainEntry[]; onRefetch: () => void }) {
   const { mutate: setModel,    isPending: settingModel }    = useSetActiveModel();
@@ -130,11 +132,12 @@ function ProviderChain({ chain, onRefetch }: { chain: ChainEntry[]; onRefetch: (
   const { mutate: setFallback, isPending: settingFallback } = useSetFallbackModel();
   const { mutate: resetFallback }                            = useResetFallbackModel();
   const { mutate: resetLimit }                               = useResetModelLimit();
+  const { data: presets = [] }                               = useAiPresetModels();
 
   if (!chain?.length) return null;
 
   const primaryEntry  = chain.find(e => e.primary);
-  const fallbackEntry = chain.find(e => !e.primary && e.provider !== 'yandex');
+  const fallbackEntry = chain.find(e => !e.primary && e.provider !== "yandex");
 
   function timeLeft(resetAt: number | null) {
     if (!resetAt) return null;
@@ -161,17 +164,17 @@ function ProviderChain({ chain, onRefetch }: { chain: ChainEntry[]; onRefetch: (
               <Select
                 value={primaryEntry?.model ?? ""}
                 onValueChange={(m) => setModel(m, { onSuccess: onRefetch })}
-                disabled={settingModel}
+                disabled={settingModel || presets.length === 0}
               >
-                <SelectTrigger className="h-7 w-52 text-xs">
+                <SelectTrigger className="h-7 w-56 text-xs">
                   <SelectValue placeholder="Выбрать основную" />
                 </SelectTrigger>
                 <SelectContent>
-                  {AI_PRESETS
+                  {presets
                     .filter(p => p.model !== fallbackEntry?.model)
                     .map(p => (
                       <SelectItem key={p.model} value={p.model} className="text-xs">
-                        {p.label}
+                        {modelLabel(p)}
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -192,17 +195,17 @@ function ProviderChain({ chain, onRefetch }: { chain: ChainEntry[]; onRefetch: (
               <Select
                 value={fallbackEntry?.model ?? ""}
                 onValueChange={(m) => setFallback(m, { onSuccess: onRefetch })}
-                disabled={settingFallback}
+                disabled={settingFallback || presets.length === 0}
               >
-                <SelectTrigger className="h-7 w-52 text-xs">
+                <SelectTrigger className="h-7 w-56 text-xs">
                   <SelectValue placeholder="Выбрать резервную" />
                 </SelectTrigger>
                 <SelectContent>
-                  {AI_PRESETS
+                  {presets
                     .filter(p => p.model !== primaryEntry?.model)
                     .map(p => (
                       <SelectItem key={p.model} value={p.model} className="text-xs">
-                        {p.label}
+                        {modelLabel(p)}
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -239,11 +242,9 @@ function ProviderChain({ chain, onRefetch }: { chain: ChainEntry[]; onRefetch: (
                     : <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                   }
                   <span className="font-mono">{entry.model}</span>
-                  <Badge variant="outline" className={`text-[10px] ml-1 ${
-                    entry.provider === "yandex"
-                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                      : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                  }`}>{entry.provider}</Badge>
+                  <Badge variant="outline" className={`text-[10px] ml-1 ${providerBadgeCls(entry.provider)}`}>
+                    {entry.provider}
+                  </Badge>
                   {entry.primary && <span className="text-[10px] text-indigo-400 ml-0.5">активная</span>}
                   {entry.exhausted && left && (
                     <span className="text-[10px] text-amber-500">сброс: {left}</span>
@@ -309,9 +310,11 @@ function DailyChart({ data }: { data: DayPoint[] }) {
               labelFormatter={(l) => `Дата: ${l}`}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="groqTokens"   name="Groq"    stackId="1"
+            <Area type="monotone" dataKey="cerebrasTokens" name="Cerebras" stackId="1"
+              stroke="#a855f7" fill="#a855f7" fillOpacity={0.3} />
+            <Area type="monotone" dataKey="groqTokens"    name="Groq"     stackId="1"
               stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} />
-            <Area type="monotone" dataKey="yandexTokens" name="Yandex"  stackId="1"
+            <Area type="monotone" dataKey="yandexTokens"  name="Yandex"   stackId="1"
               stroke="#eab308" fill="#eab308" fillOpacity={0.3} />
           </AreaChart>
         </ResponsiveContainer>

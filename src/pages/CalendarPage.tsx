@@ -14,21 +14,27 @@ import {
   subMonths,
 } from "date-fns";
 import { ru } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, CalendarClock, Building2, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarClock, Building2, ExternalLink, Clock, Trophy, ArrowRight } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router-dom";
 import apiClient from "@/lib/api-client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Procurement, PaginatedResponse } from "@/types/api";
 import { Reveal } from "@/components/Reveal";
+import { cn } from "@/lib/utils";
 
 // ── API ───────────────────────────────────────────────────────
 
-async function fetchAllActive(): Promise<Procurement[]> {
-  const { data } = await apiClient.get<PaginatedResponse<Procurement>>(
-    "/procurements?status=active&limit=200&sortBy=applicationDeadline&sortDir=asc"
-  );
+async function fetchProcurements(onlyMine: boolean): Promise<Procurement[]> {
+  // Участники видят только активные (нет смысла подавать заявки на завершённые)
+  // Заказчики видят все свои закупки на всех этапах
+  const params = new URLSearchParams({ limit: "200", sortBy: "applicationDeadline", sortDir: "asc" });
+  if (!onlyMine) params.set("status", "active");
+  if (onlyMine)  params.set("onlyMine", "true");
+  const { data } = await apiClient.get<PaginatedResponse<Procurement>>(`/procurements?${params}`);
   return data.data;
 }
 
@@ -42,17 +48,11 @@ function formatPrice(p: string | number) {
   }).format(Number(p));
 }
 
-function scoreColor(score: number): string {
-  if (score >= 70) return "bg-success";
-  if (score >= 40) return "bg-warning";
-  return "bg-muted-foreground/40";
-}
-
 // Понедельник первый (ISO week)
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 function isoDay(d: Date) {
-  const day = getDay(d); // 0=Sun
-  return day === 0 ? 6 : day - 1; // 0=Mon … 6=Sun
+  const day = getDay(d);
+  return day === 0 ? 6 : day - 1;
 }
 
 // ── CalendarPage ──────────────────────────────────────────────
@@ -61,15 +61,19 @@ const CalendarPage = () => {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
+  const { data: currentUser } = useCurrentUser();
+  const isCustomer = currentUser?.organization?.orgType === "customer";
+
   const { data: procurements = [], isError: procError } = useQuery({
-    queryKey: ["calendar-procurements"],
-    queryFn: fetchAllActive,
+    queryKey: ["calendar-procurements", isCustomer],
+    queryFn: () => fetchProcurements(isCustomer),
     staleTime: 60_000,
+    enabled: currentUser !== undefined,
   });
   useEffect(() => { if (procError) toast.error("Не удалось загрузить закупки"); }, [procError]);
 
-  // Группируем закупки по дате дедлайна (ключ — ISO-строка даты)
-  const byDate = useMemo(() => {
+  // Группируем по дате окончания приёма предложений
+  const byDeadline = useMemo(() => {
     const map = new Map<string, Procurement[]>();
     for (const p of procurements) {
       const key = format(new Date(p.applicationDeadline), "yyyy-MM-dd");
@@ -79,35 +83,50 @@ const CalendarPage = () => {
     return map;
   }, [procurements]);
 
-  // Дни текущего месяца + выравнивание по пн
+  // Группируем по дате подведения итогов (только если есть)
+  const bySummingUp = useMemo(() => {
+    const map = new Map<string, Procurement[]>();
+    for (const p of procurements) {
+      if (!p.summingUpDate) continue;
+      const key = format(new Date(p.summingUpDate), "yyyy-MM-dd");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return map;
+  }, [procurements]);
+
   const days = useMemo(() => {
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
     const allDays = eachDayOfInterval({ start, end });
-
     const leadingBlanks = isoDay(start);
     return [...Array(leadingBlanks).fill(null), ...allDays];
   }, [currentMonth]);
 
-  const selectedProcurements = useMemo(() => {
+  const selectedDeadlines = useMemo(() => {
     if (!selectedDate) return [];
     const key = format(selectedDate, "yyyy-MM-dd");
-    return byDate.get(key) ?? [];
-  }, [selectedDate, byDate]);
+    return byDeadline.get(key) ?? [];
+  }, [selectedDate, byDeadline]);
 
-  // Закупки в видимом месяце
+  const selectedSummingUp = useMemo(() => {
+    if (!selectedDate) return [];
+    const key = format(selectedDate, "yyyy-MM-dd");
+    return bySummingUp.get(key) ?? [];
+  }, [selectedDate, bySummingUp]);
+
   const monthCount = useMemo(() => {
     let n = 0;
-    byDate.forEach((_, key) => {
+    byDeadline.forEach((_, key) => {
       if (key.startsWith(format(currentMonth, "yyyy-MM"))) n++;
     });
     return n;
-  }, [byDate, currentMonth]);
+  }, [byDeadline, currentMonth]);
 
   return (
     <AppLayout
       title="Календарь дедлайнов"
-      subtitle="Даты окончания подачи заявок"
+      subtitle={isCustomer ? "Дедлайны ваших закупок" : "Даты окончания подачи заявок"}
     >
       <div className="mx-auto max-w-6xl p-4 md:p-6">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -167,16 +186,13 @@ const CalendarPage = () => {
                   }
 
                   const key = format(day, "yyyy-MM-dd");
-                  const dayProcs = byDate.get(key) ?? [];
-                  const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+                  const deadlineProcs = byDeadline.get(key) ?? [];
+                  const summingProcs  = bySummingUp.get(key) ?? [];
+                  const isSelected    = selectedDate ? isSameDay(day, selectedDate) : false;
                   const isCurrentMonth = isSameMonth(day, currentMonth);
-                  const today = isToday(day);
-                  const hasDeadlines = dayProcs.length > 0;
-
-                  // Максимальный скор среди закупок дня
-                  const maxScore = hasDeadlines
-                    ? Math.max(...dayProcs.map((p) => p.relevanceScore))
-                    : 0;
+                  const today         = isToday(day);
+                  const hasDeadlines  = deadlineProcs.length > 0;
+                  const hasSummingUp  = summingProcs.length > 0;
 
                   return (
                     <button
@@ -191,7 +207,6 @@ const CalendarPage = () => {
                         ${!isCurrentMonth ? "opacity-30" : ""}
                       `}
                     >
-                      {/* Номер дня */}
                       <span
                         className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium
                           ${today ? "bg-primary text-primary-foreground" : "text-foreground"}`}
@@ -199,28 +214,34 @@ const CalendarPage = () => {
                         {format(day, "d")}
                       </span>
 
-                      {/* Точки закупок */}
-                      {hasDeadlines && (
-                        <div className="mt-1.5 flex flex-wrap gap-0.5">
-                          {dayProcs.slice(0, 3).map((p) => (
-                            <span
-                              key={p.id}
-                              className={`h-1.5 w-1.5 rounded-full ${scoreColor(p.relevanceScore)}`}
-                              title={p.title}
-                            />
-                          ))}
-                          {dayProcs.length > 3 && (
-                            <span className="text-[9px] leading-none text-muted-foreground">
-                              +{dayProcs.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      {/* Точки: синие = прием предложений, зелёные = подведение итогов,
+                           серые = завершена/отменена */}
+                      <div className="mt-1.5 flex flex-wrap gap-0.5">
+                        {deadlineProcs.slice(0, 3).map((p) => (
+                          <span
+                            key={`d-${p.id}`}
+                            title={p.title}
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              p.status === "completed" || p.status === "cancelled"
+                                ? "bg-muted-foreground/40"
+                                : "bg-indigo-500",
+                            )}
+                          />
+                        ))}
+                        {summingProcs.slice(0, 2).map((p) => (
+                          <span key={`s-${p.id}`} className="h-1.5 w-1.5 rounded-full bg-amber-400" title={`Итоги: ${p.title}`} />
+                        ))}
+                        {(deadlineProcs.length + summingProcs.length) > 5 && (
+                          <span className="text-[9px] leading-none text-muted-foreground">
+                            +{deadlineProcs.length + summingProcs.length - 5}
+                          </span>
+                        )}
+                      </div>
 
-                      {/* Мини-бейдж количества */}
-                      {hasDeadlines && (
+                      {(hasDeadlines || hasSummingUp) && (
                         <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                          {dayProcs.length}
+                          {deadlineProcs.length + summingProcs.length}
                         </span>
                       )}
                     </button>
@@ -231,13 +252,10 @@ const CalendarPage = () => {
               {/* Легенда */}
               <div className="flex flex-wrap items-center gap-4 border-t border-border px-5 py-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-success" /> Высокая релевантность (≥70)
+                  <span className="h-2 w-2 rounded-full bg-indigo-500" /> Окончание приёма предложений
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-warning" /> Средняя (40–70)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40" /> Низкая (&lt;40)
+                  <span className="h-2 w-2 rounded-full bg-amber-400" /> Подведение итогов
                 </span>
               </div>
             </Card>
@@ -263,61 +281,114 @@ const CalendarPage = () => {
                       Нажмите на дату с дедлайнами
                     </p>
                   </div>
-                ) : selectedProcurements.length === 0 ? (
+                ) : (selectedDeadlines.length === 0 && selectedSummingUp.length === 0) ? (
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    Нет закупок с дедлайном в этот день
+                    Нет событий в этот день
                   </div>
                 ) : (
                   <div className="divide-y divide-border">
-                    {selectedProcurements.map((p) => (
-                      <div key={p.id} className="p-4 hover:bg-muted/30">
-                        {/* Скор */}
+                    {/* Окончание приёма предложений */}
+                    {selectedDeadlines.map((p) => (
+                      <Link
+                        key={`deadline-${p.id}`}
+                        to={`/procurements/${p.id}`}
+                        className="group block p-4 transition-colors hover:bg-muted/40"
+                      >
                         <div className="mb-2 flex items-center gap-2">
-                          <div
-                            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${
-                              p.relevanceScore >= 70
-                                ? "bg-success"
-                                : p.relevanceScore >= 40
-                                ? "bg-warning"
-                                : "bg-muted-foreground/50"
-                            }`}
-                          >
-                            {p.relevanceScore}
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/15">
+                            <Clock className="h-3 w-3 text-indigo-400" />
                           </div>
-                          <Badge
-                            variant="outline"
-                            className="h-5 text-[10px] font-normal"
-                          >
+                          <span className="text-[11px] font-semibold text-indigo-400">Окончание приёма предложений</span>
+                          <Badge variant="outline" className="ml-auto h-5 text-[10px] font-normal">
                             {p.etp?.name ?? "ЭТП"}
                           </Badge>
                         </div>
 
-                        <p className="text-sm font-medium text-foreground break-russian line-clamp-2">
+                        <p className="text-sm font-medium text-foreground break-words line-clamp-2 group-hover:text-primary">
                           {p.title}
                         </p>
 
                         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="h-3 w-3 shrink-0" />
-                            {p.customer?.name ?? "—"}
-                          </div>
+                          {!isCustomer && (
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="h-3 w-3 shrink-0" />
+                              {p.customer?.name ?? "—"}
+                            </div>
+                          )}
                           <div className="font-medium text-foreground">
                             {formatPrice(p.initialPrice)}
                           </div>
                         </div>
 
-                        {p.documentationUrl && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2 h-7 gap-1.5 px-2 text-xs"
-                            onClick={() => window.open(p.documentationUrl!, "_blank")}
-                          >
-                            Документация
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          {p.documentationUrl && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 px-2 text-xs"
+                              onClick={(e) => { e.preventDefault(); window.open(p.documentationUrl!, "_blank"); }}
+                            >
+                              Документация
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          )}
+                          <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground/50 opacity-0 transition-opacity group-hover:opacity-100">
+                            Открыть <ArrowRight className="h-3 w-3" />
+                          </span>
+                        </div>
+                      </Link>
+                    ))}
+
+                    {/* Подведение итогов */}
+                    {selectedSummingUp.map((p) => (
+                      <Link
+                        key={`summing-${p.id}`}
+                        to={`/procurements/${p.id}`}
+                        className="group block p-4 transition-colors hover:bg-muted/40"
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15">
+                            <Trophy className="h-3 w-3 text-amber-400" />
+                          </div>
+                          <span className="text-[11px] font-semibold text-amber-400">Подведение итогов</span>
+                          <Badge variant="outline" className="ml-auto h-5 text-[10px] font-normal">
+                            {p.etp?.name ?? "ЭТП"}
+                          </Badge>
+                        </div>
+
+                        <p className="text-sm font-medium text-foreground break-words line-clamp-2 group-hover:text-primary">
+                          {p.title}
+                        </p>
+
+                        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                          {!isCustomer && (
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="h-3 w-3 shrink-0" />
+                              {p.customer?.name ?? "—"}
+                            </div>
+                          )}
+                          <div className="font-medium text-foreground">
+                            {formatPrice(p.initialPrice)}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          {p.documentationUrl && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 px-2 text-xs"
+                              onClick={(e) => { e.preventDefault(); window.open(p.documentationUrl!, "_blank"); }}
+                            >
+                              Документация
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          )}
+                          <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground/50 opacity-0 transition-opacity group-hover:opacity-100">
+                            Открыть <ArrowRight className="h-3 w-3" />
+                          </span>
+                        </div>
+                      </Link>
                     ))}
                   </div>
                 )}

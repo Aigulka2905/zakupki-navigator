@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
     // 🔗 ПРОКСИ ДЛЯ ПОДКЛЮЧЕНИЯ К БЭКЕНДУ
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:4002',
         changeOrigin: true,
         secure: false,
         ws: true, // Поддержка WebSocket для real-time уведомлений

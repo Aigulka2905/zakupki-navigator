@@ -26,6 +26,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage.tsx";
 import VerifyEmailPage from "./pages/VerifyEmailPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
+import NationalRegimePage from "./pages/NationalRegimePage.tsx";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -81,6 +82,7 @@ const App = () => (
           <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
           <Route path="/check-supplier" element={<ProtectedRoute><CheckSupplierPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/national-regime" element={<ProtectedRoute><NationalRegimePage /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

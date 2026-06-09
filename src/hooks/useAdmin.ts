@@ -176,6 +176,61 @@ export function useAdminAudit(params: {
   });
 }
 
+export interface SyncStatus {
+  lastSyncAt: string | null;
+  procurementCount: number;
+}
+
+export interface AiPresetModel {
+  model: string;
+  provider: string;
+  label: string;
+  note?: string;
+}
+
+export function useAiPresetModels() {
+  return useQuery<AiPresetModel[]>({
+    queryKey: ["admin-ai-models"],
+    queryFn: () => apiClient.get<AiPresetModel[]>("/admin/ai-models").then((r) => r.data),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useSyncStatus() {
+  return useQuery<SyncStatus>({
+    queryKey: ["admin-sync-status"],
+    queryFn: () => apiClient.get<SyncStatus>("/admin/sync-status").then((r) => r.data),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useSyncRftorgi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post("/admin/sync-rftorgi").then((r) => r.data),
+    onSuccess: () => {
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["admin-sync-status"] });
+        qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      }, 3000);
+    },
+  });
+}
+
+export function useSyncAftorgi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post("/admin/sync-aftorgi").then((r) => r.data),
+    onSuccess: () => {
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["admin-sync-status"] });
+        qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      }, 3000);
+    },
+  });
+}
+
 export function useAdminLogs(params: {
   level?: string;
   search?: string;

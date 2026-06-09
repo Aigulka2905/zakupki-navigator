@@ -75,6 +75,7 @@ interface RftDetail {
   };
   tariff?: { text?: string; percent?: number | null; nds?: string };
   info_trading_venue?: string; order_review_and_summing_up?: string;
+  place_review_and_summing_up?: string; summing_up_date?: string;
   organizer?: RftOrganizer;
 }
 
@@ -379,6 +380,33 @@ function TabInfo({ p, live }: { p: Procurement; live: LiveData | null }) {
             />
           )}
         </div>
+      </GlassCard>
+
+      {/* Порядок проведения процедуры */}
+      <GlassCard className="p-5">
+        <div className="mb-4 flex items-center gap-2 text-[13px] font-semibold text-foreground">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10">
+            <CalendarClock className="h-3.5 w-3.5 text-indigo-400" />
+          </div>
+          Порядок проведения процедуры
+        </div>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+          <div className="divide-y divide-border/20">
+            <InfoRow label="Дата начала срока подачи заявок"        value={fmtRft(p.publicationDate)} />
+            <InfoRow label="Дата и время окончания срока подачи заявок" value={fmtRft(p.applicationDeadline)} />
+            <InfoRow label="Порядок подачи заявок"                  value={p.biddingProcedures ?? d?.bidding_procedures} />
+          </div>
+          <div className="divide-y divide-border/20">
+            <InfoRow label="Место подведения итогов"   value={p.summingUpPlace ?? d?.place_review_and_summing_up} />
+            <InfoRow label="Дата подведения итогов"    value={(p.summingUpDate ?? d?.summing_up_date) ? fmtRft(p.summingUpDate ?? d?.summing_up_date) : undefined} />
+            <InfoRow label="Порядок подведения итогов" value={p.summingUpOrder ?? d?.order_review_and_summing_up} />
+          </div>
+        </div>
+        {p.statusLabel && (
+          <div className="mt-4 border-t border-border/20 pt-3 text-[12px] text-muted-foreground/70 italic">
+            {p.statusLabel}
+          </div>
+        )}
       </GlassCard>
 
       {/* Provisions */}

@@ -605,7 +605,7 @@ function ChatDocsPanel({
 const ChatPage = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const procurementId = searchParams.get("procurement") ?? undefined;
   const sessionId = searchParams.get("session") ?? undefined;
 
@@ -622,6 +622,8 @@ const ChatPage = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
+  const autoQueryRef  = useRef(searchParams.get('q') ?? '');
+  const autoSentRef   = useRef(false);
 
   // ── Inline document attachment ─────────────────────────────────
   const chatDocsKey = ["chat-docs", sessionId ?? null, procurementId ?? null];
@@ -719,6 +721,15 @@ const ChatPage = () => {
       toast.error(msg ?? "Ошибка при отправке");
     },
   });
+
+  // ── Auto-send message arriving from Dashboard "Спросите ассистента" ──
+  useEffect(() => {
+    const q = autoQueryRef.current;
+    if (!q || autoSentRef.current || historyLoading) return;
+    autoSentRef.current = true;
+    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.delete('q'); return n; }, { replace: true });
+    sendMsg({ message: q, sessionId, procurementId, docId });
+  }, [historyLoading, sendMsg, sessionId, procurementId, docId, setSearchParams]);
 
   // ── New chat ───────────────────────────────────────────────────
   const handleNewChat = useCallback(async () => {
