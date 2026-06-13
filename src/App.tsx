@@ -62,6 +62,8 @@ const App = () => (
         <Routes>
           {/* Публичные маршруты */}
           <Route path="/login" element={<LoginPage />} />
+          {/* /register — точка входа по ссылке-приглашению (?invite=…) */}
+          <Route path="/register" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
