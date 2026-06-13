@@ -1,5 +1,5 @@
-import { useState, forwardRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect, forwardRef } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -36,6 +36,23 @@ const registerSchema = z.object({
   orgName: z.string().min(2, "Укажите название организации"),
   inn: z.string().min(10, "ИНН 10 или 12 цифр").max(12).regex(/^\d+$/, "Только цифры"),
   kpp: z.string().length(9, "КПП — 9 цифр").regex(/^\d+$/, "Только цифры"),
+});
+
+// При регистрации по приглашению организация уже существует — нужны только
+// личные поля пользователя.
+const inviteRegisterSchema = z.object({
+  email: z.string().email("Некорректный email"),
+  username: z
+    .string()
+    .min(3, "Минимум 3 символа")
+    .max(30, "Максимум 30 символов")
+    .regex(/^[a-zA-Z0-9_-]+$/, "Только латиница, цифры, _ и -"),
+  password: z
+    .string()
+    .min(8, "Минимум 8 символов")
+    .regex(/\d/, "Должна быть хотя бы одна цифра")
+    .regex(/[^a-zA-Z0-9а-яА-ЯёЁ]/, "Должен быть хотя бы один спецсимвол (!@#$ и т.п.)"),
+  fullName: z.string().min(2, "Укажите имя"),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -177,11 +194,31 @@ function LoginForm() {
 // ── Register form ─────────────────────────────────────────────
 
 function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get("invite");
+  const isInvite = !!inviteToken;
+
   const [serverError, setServerError] = useState<string | null>(null);
   const [orgType, setOrgType] = useState<OrgType | null>(null);
+  const [invitePreview, setInvitePreview] = useState<{ organizationName: string; email: string } | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<RegisterValues>({
-    resolver: zodResolver(registerSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(isInvite ? inviteRegisterSchema : registerSchema) as any,
   });
+
+  // Подгружаем данные приглашения и подставляем email.
+  useEffect(() => {
+    if (!inviteToken) return;
+    apiClient
+      .get<{ organizationName: string; email: string }>(`/auth/invite/${inviteToken}`)
+      .then(({ data }) => {
+        setInvitePreview(data);
+        if (data.email) setValue("email", data.email);
+      })
+      .catch(() => setInviteError("Приглашение недействительно или истекло."));
+  }, [inviteToken, setValue]);
 
   const selectOrgType = (type: OrgType) => {
     setOrgType(type);
@@ -191,14 +228,23 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const onSubmit = async (values: RegisterValues) => {
     setServerError(null);
     try {
-      const { data } = await apiClient.post<AuthTokens>("/auth/register", {
-        email: values.email,
-        username: values.username,
-        password: values.password,
-        fullName: values.fullName,
-        orgType: values.orgType,
-        organization: { name: values.orgName, inn: values.inn, kpp: values.kpp },
-      });
+      const body = isInvite
+        ? {
+            email: values.email,
+            username: values.username,
+            password: values.password,
+            fullName: values.fullName,
+            inviteToken,
+          }
+        : {
+            email: values.email,
+            username: values.username,
+            password: values.password,
+            fullName: values.fullName,
+            orgType: values.orgType,
+            organization: { name: values.orgName, inn: values.inn, kpp: values.kpp },
+          };
+      const { data } = await apiClient.post<AuthTokens>("/auth/register", body);
       tokenStorage.setTokens(data.accessToken);
       queryClient.clear();
       onSuccess();
@@ -208,11 +254,30 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  // Приглашение недействительно — показываем только ошибку.
+  if (isInvite && inviteError) {
+    return (
+      <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-600">
+        {inviteError}
+      </div>
+    );
+  }
+
   const inputClass = "h-11 rounded-xl border-white/40 bg-white/60 backdrop-blur-sm placeholder:text-slate-400 focus:border-violet-300 focus:ring-violet-200";
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
-      {/* Тип участника */}
+      {/* Приглашение в организацию */}
+      {isInvite && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm text-violet-700">
+          {invitePreview
+            ? <>Вы присоединяетесь к организации <span className="font-semibold">«{invitePreview.organizationName}»</span>.</>
+            : "Загрузка приглашения…"}
+        </div>
+      )}
+
+      {/* Тип участника — только при создании новой организации */}
+      {!isInvite && (
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-700">Я являюсь</Label>
         <div className="grid grid-cols-2 gap-2">
@@ -259,6 +324,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <input type="hidden" {...register("orgType")} />
         <FieldError message={errors.orgType?.message} />
       </div>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-sm font-medium text-slate-700">Email</Label>
@@ -289,6 +355,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <p className="text-[11px] text-slate-400">Минимум 8 символов, цифра и спецсимвол (!@#$...)</p>
       </div>
 
+      {!isInvite && (
       <div className="rounded-xl border border-white/50 bg-white/30 p-3 backdrop-blur-sm">
         <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Организация</p>
         <div className="space-y-2.5">
@@ -308,6 +375,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </div>
       </div>
+      )}
 
       {serverError && (
         <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm text-rose-600">
@@ -337,7 +405,9 @@ type Tab = "login" | "register";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("login");
+  const [searchParams] = useSearchParams();
+  // По ссылке-приглашению (?invite=) сразу открываем вкладку регистрации.
+  const [tab, setTab] = useState<Tab>(searchParams.get("invite") ? "register" : "login");
   const [registered, setRegistered] = useState(false);
 
   const handleRegisterSuccess = () => {

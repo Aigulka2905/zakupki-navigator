@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Reveal } from "@/components/Reveal";
+import { TeamSection } from "@/components/TeamSection";
 import apiClient from "@/lib/api-client";
 import type { Organization, OrgDocument, Procurement } from "@/types/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -877,6 +878,10 @@ const OrganizationPage = () => {
 
         </div>
       </form>
+
+      <div className="mx-auto max-w-4xl px-4 pb-8 md:px-6">
+        <TeamSection />
+      </div>
     </AppLayout>
   );
 };

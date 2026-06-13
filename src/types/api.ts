@@ -55,9 +55,27 @@ export interface User {
   fullName: string;
   role: UserRole;
   organizationId: string;
+  isOrgOwner?: boolean;
   createdAt: string;
   lastLogin: string | null;
   organization?: Organization;
+}
+
+export interface OrgMember {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  isOrgOwner: boolean;
+  lastLogin: string | null;
+  createdAt: string;
+}
+
+export interface OrgInvite {
+  id: string;
+  email: string;
+  expiresAt: string;
+  createdAt: string;
 }
 
 export interface ETPPlatform {
