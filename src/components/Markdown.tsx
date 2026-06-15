@@ -15,7 +15,11 @@ export function Markdown({ content, className }: { content: string; className?: 
         // компактные отступы под чат-пузырь
         "prose-p:my-2 prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:font-semibold",
         "prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5",
-        "prose-table:my-2 prose-th:px-2.5 prose-th:py-1.5 prose-td:px-2.5 prose-td:py-1.5",
+        // Таблицы: авто-ширина + мин-ширина ячеек, чтобы колонки не схлопывались
+        // (широкие таблицы скроллятся по горизонтали, а не давятся в пузырь).
+        "prose-table:my-2 prose-table:w-auto",
+        "prose-th:px-2.5 prose-th:py-1.5 prose-th:align-top prose-th:min-w-[110px]",
+        "prose-td:px-2.5 prose-td:py-1.5 prose-td:align-top prose-td:min-w-[110px]",
         "prose-pre:my-2 prose-pre:text-[13px] prose-code:text-[13px]",
         "prose-a:text-indigo-500 hover:prose-a:text-indigo-400",
         className,

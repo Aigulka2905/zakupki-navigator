@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
+import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -95,7 +96,7 @@ function CommentCard({ text, tone, index }: { text: string; tone: Tone; index: n
             </span>
             <span className="text-[11px] text-muted-foreground">#{index + 1}</span>
           </div>
-          <p className="mt-1.5 text-sm text-foreground break-russian">{text}</p>
+          <Markdown content={text} className="mt-1.5 text-sm break-russian prose-p:my-0 prose-p:leading-snug" />
         </div>
       </div>
     </div>

@@ -95,7 +95,7 @@ function AssistantBubble({ content }: { content: string }) {
         <Bot className="h-3.5 w-3.5 text-white" />
       </div>
 
-      <div className="min-w-0 flex-1 max-w-[85%]">
+      <div className="min-w-0 flex-1 max-w-[92%]">
         {/* Message card — markdown от ИИ (таблицы, жирный, списки) */}
         <div className="rounded-2xl rounded-tl-sm border border-border/40 bg-card/70 px-5 py-4 text-[14px] leading-[1.7] text-foreground backdrop-blur-sm">
           <Markdown content={content} />
