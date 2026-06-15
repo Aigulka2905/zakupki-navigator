@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
+import { Markdown } from "@/components/Markdown";
 import {
   Send, FileCheck2, Scale, CalendarClock, Sparkles, Bot,
   Loader2, Building2, ExternalLink, MessageSquare, BookOpen,
@@ -95,9 +96,9 @@ function AssistantBubble({ content }: { content: string }) {
       </div>
 
       <div className="min-w-0 flex-1 max-w-[85%]">
-        {/* Message card */}
-        <div className="rounded-2xl rounded-tl-sm border border-border/40 bg-card/70 px-5 py-4 text-[14px] leading-[1.7] text-foreground backdrop-blur-sm whitespace-pre-wrap">
-          {content}
+        {/* Message card — markdown от ИИ (таблицы, жирный, списки) */}
+        <div className="rounded-2xl rounded-tl-sm border border-border/40 bg-card/70 px-5 py-4 text-[14px] leading-[1.7] text-foreground backdrop-blur-sm">
+          <Markdown content={content} />
         </div>
 
         {/* Actions row (on hover) */}
