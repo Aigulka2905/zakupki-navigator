@@ -127,7 +127,7 @@ const PLAN_META: Record<string, PlanMeta> = {
     chatRequests: 30,
     analyses: 1,
     users: 1,
-    features: ["30 AI-запросов в месяц", "1 анализ документа", "Groq Llama (бесплатно)", "1 пользователь"],
+    features: ["30 AI-запросов в месяц", "1 анализ документа", "AI-ассистент ZakupkiAI", "1 пользователь"],
   },
   pro: {
     label: "Pro",
@@ -141,7 +141,7 @@ const PLAN_META: Record<string, PlanMeta> = {
     analyses: 20,
     users: 1,
     popular: true,
-    features: ["500 AI-запросов в месяц", "20 анализов документов", "YandexGPT / Groq", "1 пользователь", "Приоритетная поддержка"],
+    features: ["500 AI-запросов в месяц", "20 анализов документов", "AI-ассистент (YandexGPT)", "1 пользователь", "Приоритетная поддержка"],
   },
   business: {
     label: "Business",
@@ -154,7 +154,7 @@ const PLAN_META: Record<string, PlanMeta> = {
     chatRequests: 2000,
     analyses: 100,
     users: 3,
-    features: ["2 000 AI-запросов в месяц", "100 анализов документов", "YandexGPT / Groq", "До 3 пользователей", "Выгрузка отчётов"],
+    features: ["2 000 AI-запросов в месяц", "100 анализов документов", "AI-ассистент (YandexGPT)", "До 3 пользователей", "Выгрузка отчётов"],
   },
   enterprise: {
     label: "Enterprise",
@@ -176,11 +176,12 @@ const PLAN_ORDER = ["free", "pro", "business", "enterprise"];
 // ── Helpers ───────────────────────────────────────────────────
 
 const MODEL_LABELS: Record<string, string> = {
-  "llama-3.3-70b-versatile": "Groq · Llama 3.3 70B",
-  "llama-3.1-70b-versatile": "Groq · Llama 3.1 70B",
   "yandexgpt/latest":       "YandexGPT Pro",
   "yandexgpt-lite/latest":  "YandexGPT Lite",
 };
+// Базовый AI-ассистент (тарифы Free/Pro/Business) показывается нейтрально, без
+// раскрытия конкретной модели. Платный YandexGPT — по названию (см. карту выше).
+const DEFAULT_MODEL_LABEL = "AI-ассистент ZakupkiAI";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)} М`;
@@ -578,7 +579,6 @@ const BillingPage = () => {
                   </p>
                 )}
                 {balanceLow && <p className="mt-0.5 text-xs text-destructive">Баланс заканчивается</p>}
-                {usage?.isFree && <p className="mt-0.5 text-xs text-emerald-500">Бесплатный режим (Groq)</p>}
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10">
                 <Wallet className="h-5 w-5 text-indigo-400" />
@@ -601,7 +601,7 @@ const BillingPage = () => {
                   <p className="mt-1 text-2xl font-bold">{formatTokens(usage?.monthlyTokens ?? 0)}</p>
                 )}
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {usage?.isFree ? "Бесплатно" : `≈ ${usage?.monthlyCostRubles} ₽`}
+                  {usage?.isFree ? "Входит в тариф" : `≈ ${usage?.monthlyCostRubles} ₽`}
                 </p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10">
@@ -614,23 +614,18 @@ const BillingPage = () => {
           <Card className="p-5 shadow-card">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Модель</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI-ассистент</p>
                 <p className="mt-1 text-sm font-semibold leading-tight">
-                  {MODEL_LABELS[usage?.currentModel ?? ""] ?? usage?.currentModel ?? "—"}
+                  {MODEL_LABELS[usage?.currentModel ?? ""] ?? DEFAULT_MODEL_LABEL}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {usage?.isFree ? "0 ₽ / 1К токенов" : `${usage?.pricePerKToken} ₽ / 1К токенов`}
+                  {usage?.isFree ? "Входит в тариф" : `${usage?.pricePerKToken} ₽ / 1К токенов`}
                 </p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
                 <Zap className="h-5 w-5 text-emerald-400" />
               </div>
             </div>
-            {usage?.isFree && (
-              <div className="mt-3 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-400">
-                YandexGPT потребует пополнить баланс
-              </div>
-            )}
           </Card>
         </div>
         </Reveal>
@@ -721,7 +716,7 @@ const BillingPage = () => {
             <div className="rounded-lg bg-muted/40 p-3">
               <p className="text-xs text-muted-foreground">Стоимость месяца</p>
               <p className="mt-0.5 text-lg font-semibold">
-                {usage?.isFree ? "Бесплатно" : `${usage?.monthlyCostRubles} ₽`}
+                {usage?.isFree ? "Входит в тариф" : `${usage?.monthlyCostRubles} ₽`}
               </p>
             </div>
           </div>
@@ -731,7 +726,6 @@ const BillingPage = () => {
             <p className="mb-3 text-xs font-medium text-muted-foreground">Стоимость за 1 000 токенов</p>
             <div className="space-y-2">
               {[
-                { model: "Groq · Llama 3.3 70B", input: "—", output: "—", blended: "Бесплатно", active: usage?.currentModel?.includes("llama") },
                 { model: "YandexGPT Lite",        input: "0.25 ₽", output: "0.30 ₽", blended: "~0.26 ₽", active: usage?.currentModel === "yandexgpt-lite/latest" },
                 { model: "YandexGPT Pro",          input: "1.50 ₽", output: "1.80 ₽", blended: "~1.55 ₽", active: usage?.currentModel === "yandexgpt/latest" },
               ].map((row) => (

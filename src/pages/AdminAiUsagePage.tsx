@@ -45,8 +45,7 @@ interface DayPoint {
   date: string;
   totalTokens: number;
   costKopecks: number;
-  cerebrasTokens: number;
-  groqTokens: number;
+  localTokens: number;
   yandexTokens: number;
 }
 
@@ -71,7 +70,7 @@ interface YandexBilling {
 
 interface ChainEntry {
   id: string;
-  provider: "groq" | "yandex";
+  provider: "local" | "yandex";
   model: string;
   primary: boolean;
   exhausted: boolean;
@@ -109,14 +108,12 @@ function fmtTokens(n: number) {
 }
 
 function providerColor(p: string) {
-  if (p === "yandex")   return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-  if (p === "cerebras") return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+  if (p === "yandex") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
   return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
 }
 
 function providerBadgeCls(provider: string) {
-  if (provider === "yandex")   return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-  if (provider === "cerebras") return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+  if (provider === "yandex") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
   return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
 }
 
@@ -310,11 +307,9 @@ function DailyChart({ data }: { data: DayPoint[] }) {
               labelFormatter={(l) => `Дата: ${l}`}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="cerebrasTokens" name="Cerebras" stackId="1"
-              stroke="#a855f7" fill="#a855f7" fillOpacity={0.3} />
-            <Area type="monotone" dataKey="groqTokens"    name="Groq"     stackId="1"
+            <Area type="monotone" dataKey="localTokens"  name="Локальная" stackId="1"
               stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} />
-            <Area type="monotone" dataKey="yandexTokens"  name="Yandex"   stackId="1"
+            <Area type="monotone" dataKey="yandexTokens" name="Yandex"    stackId="1"
               stroke="#eab308" fill="#eab308" fillOpacity={0.3} />
           </AreaChart>
         </ResponsiveContainer>

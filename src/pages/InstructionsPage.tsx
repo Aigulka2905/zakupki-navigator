@@ -520,7 +520,7 @@ const TOPICS: Topic[] = [
                 </thead>
                 <tbody className="divide-y divide-border">
                   {[
-                    { model: "Groq · Llama 3.3 70B", price: "Бесплатно", status: "Тест", statusClass: "bg-success/10 text-success" },
+                    { model: "AI-ассистент ZakupkiAI", price: "Входит в тариф", status: "Активно", statusClass: "bg-success/10 text-success" },
                     { model: "YandexGPT Lite", price: "0.20 ₽ / 1К токенов", status: "Платно", statusClass: "bg-primary-soft text-primary" },
                     { model: "YandexGPT Pro", price: "1.00 ₽ / 1К токенов", status: "Платно", statusClass: "bg-primary-soft text-primary" },
                   ].map((row) => (
@@ -696,7 +696,7 @@ const TOPICS: Topic[] = [
             {[
               {
                 q: "ИИ отвечает медленно или не отвечает",
-                a: "Модель Groq может быть временно недоступна из-за ограничений сети. Подождите 1–2 минуты и повторите запрос. Если проблема сохраняется — обратитесь к администратору для переключения на другую модель.",
+                a: "При высокой нагрузке AI-ассистент может отвечать медленнее. Подождите 1–2 минуты и повторите запрос. Если проблема сохраняется — обратитесь к администратору.",
               },
               {
                 q: "ИИ отвечает не по документу, а про 'Тестовую организацию'",
