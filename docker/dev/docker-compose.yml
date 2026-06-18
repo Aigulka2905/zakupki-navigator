@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────
+# DEV окружение: Vite dev-server (HMR) + nginx reverse-proxy.
+# Запуск:  make dev   (или docker compose -f docker/dev/docker-compose.yml up --build)
+# Точка входа в браузере: http://localhost:8081  (через nginx)
+# Прямой доступ к Vite:    http://localhost:5173
+#
+# Бэкенд доступен по внешнему домену, поэтому:
+#   • явное имя проекта `zakupki-frontend` — чтобы не пересекаться с
+#     контейнерами бэкенда (dev-backend-1, dev-nginx-1, ...);
+#   • фронтенд-nginx слушает :8081 (8080 уже занят локальным бэкендом);
+#   • цель прокси /api и /ws задаётся переменной BACKEND_ORIGIN
+#     (домен бэкенда), по умолчанию — локальный бэкенд на хосте.
+# ─────────────────────────────────────────────────────────────
+name: zakupki-frontend
+
+services:
+  frontend:
+    build:
+      context: ../..
+      dockerfile: docker/dev/frontend/Dockerfile
+    image: registry.soderiz.ru/zakupki-ai/frontend:dev
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # Цель проксирования /api напрямую из Vite (при доступе к :5173 минуя nginx).
+      VITE_PROXY_TARGET: "${BACKEND_ORIGIN:-http://host.docker.internal:8080}"
+      VITE_API_URL: "/api"
+    extra_hosts:
+      # Доступ к локальному бэкенду на хосте, если BACKEND_ORIGIN не задан.
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: ../env/dev.env
+        required: false
+    volumes:
+      # Bind-mount исходников для live-reload...
+      - ../..:/app
+      # ...и anonymous volume, чтобы node_modules из образа не затирался.
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: ../..
+      dockerfile: docker/dev/nginx/Dockerfile
+    image: registry.soderiz.ru/zakupki-ai/nginx:dev
+    environment:
+      BACKEND_UPSTREAM: "${BACKEND_ORIGIN:-http://host.docker.internal:8080}"
+      FRONTEND_UPSTREAM: "http://frontend:5173"
+    extra_hosts:
+      # Доступ к локальному бэкенду на хосте (host.docker.internal → host-gateway).
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: ../env/dev.env
+        required: false
+    ports:
+      - "8081:80"
+    depends_on:
+      - frontend
+    restart: unless-stopped

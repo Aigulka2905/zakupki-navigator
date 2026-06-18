@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
@@ -5,28 +6,40 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { tokenStorage } from "@/lib/auth";
-import Index from "./pages/Index.tsx";
-import ChatPage from "./pages/ChatPage.tsx";
-import KnowledgeBase from "./pages/KnowledgeBase.tsx";
-import DocumentAnalysis from "./pages/DocumentAnalysis.tsx";
-import HistoryPage from "./pages/HistoryPage.tsx";
-import SettingsPage from "./pages/SettingsPage.tsx";
-import ProcurementsPage from "./pages/ProcurementsPage.tsx";
-import ProcurementDetailPage from "./pages/ProcurementDetailPage.tsx";
-import TemplatesPage from "./pages/TemplatesPage.tsx";
-import CalendarPage from "./pages/CalendarPage.tsx";
-import OrganizationPage from "./pages/OrganizationPage.tsx";
-import BillingPage from "./pages/BillingPage.tsx";
-import InstructionsPage from "./pages/InstructionsPage.tsx";
-import CheckSupplierPage from "./pages/CheckSupplierPage.tsx";
-import NotificationsPage from "./pages/NotificationsPage.tsx";
-import LoginPage from "./pages/LoginPage.tsx";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage.tsx";
-import ResetPasswordPage from "./pages/ResetPasswordPage.tsx";
-import VerifyEmailPage from "./pages/VerifyEmailPage.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import AdminPage from "./pages/AdminPage.tsx";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+
+// Ленивая загрузка страниц → каждый маршрут попадает в отдельный чанк и
+// подгружается по требованию. Это резко уменьшает размер первичного бандла
+// (тяжёлые страницы с графиками/таблицами не блокируют первый рендер).
+const Index = lazy(() => import("./pages/Index.tsx"));
+const ChatPage = lazy(() => import("./pages/ChatPage.tsx"));
+const KnowledgeBase = lazy(() => import("./pages/KnowledgeBase.tsx"));
+const DocumentAnalysis = lazy(() => import("./pages/DocumentAnalysis.tsx"));
+const HistoryPage = lazy(() => import("./pages/HistoryPage.tsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
+const ProcurementsPage = lazy(() => import("./pages/ProcurementsPage.tsx"));
+const ProcurementDetailPage = lazy(() => import("./pages/ProcurementDetailPage.tsx"));
+const TemplatesPage = lazy(() => import("./pages/TemplatesPage.tsx"));
+const CalendarPage = lazy(() => import("./pages/CalendarPage.tsx"));
+const OrganizationPage = lazy(() => import("./pages/OrganizationPage.tsx"));
+const BillingPage = lazy(() => import("./pages/BillingPage.tsx"));
+const InstructionsPage = lazy(() => import("./pages/InstructionsPage.tsx"));
+const CheckSupplierPage = lazy(() => import("./pages/CheckSupplierPage.tsx"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.tsx"));
+const LoginPage = lazy(() => import("./pages/LoginPage.tsx"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage.tsx"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage.tsx"));
+const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const AdminPage = lazy(() => import("./pages/AdminPage.tsx"));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!tokenStorage.isAuthenticated()) {
@@ -58,6 +71,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           {/* Публичные маршруты */}
           <Route path="/login" element={<LoginPage />} />
@@ -86,6 +100,7 @@ const App = () => (
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
