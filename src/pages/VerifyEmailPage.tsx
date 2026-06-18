@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { ShieldCheck, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,14 @@ const VerifyEmailPage = () => {
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  // Гард от двойного запроса в React StrictMode (dev): эффект вызывается дважды,
+  // и второй запрос с уже погашенным токеном затирал успех ошибкой.
+  const didRun = useRef(false);
 
   useEffect(() => {
+    if (didRun.current) return;
+    didRun.current = true;
+
     if (!token) {
       setStatus("error");
       setErrorMsg("Токен подтверждения не найден");
