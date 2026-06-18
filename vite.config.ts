@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
     // к Vite (порт 5173) цель проксирования берётся из env, иначе localhost.
     proxy: {
       '/api': {
-        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:3001',
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:4002',
         changeOrigin: true,
         secure: false,
         ws: true, // Поддержка WebSocket для real-time уведомлений

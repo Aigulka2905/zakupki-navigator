@@ -55,9 +55,27 @@ export interface User {
   fullName: string;
   role: UserRole;
   organizationId: string;
+  isOrgOwner?: boolean;
   createdAt: string;
   lastLogin: string | null;
   organization?: Organization;
+}
+
+export interface OrgMember {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  isOrgOwner: boolean;
+  lastLogin: string | null;
+  createdAt: string;
+}
+
+export interface OrgInvite {
+  id: string;
+  email: string;
+  expiresAt: string;
+  createdAt: string;
 }
 
 export interface ETPPlatform {
@@ -75,6 +93,11 @@ export interface Procurement {
   title: string;
   status: ProcurementStatus;
   statusLabel?: string | null;
+  procedureType?: string | null;
+  summingUpDate?: string | null;
+  biddingProcedures?: string | null;
+  summingUpPlace?: string | null;
+  summingUpOrder?: string | null;
   etpId: string;
   customerId: string;
   initialPrice: string; // Prisma Decimal сериализуется как строка
@@ -209,6 +232,7 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   limit: number;
+  counts?: { active: number; completed: number; cancelled: number };
 }
 
 // ── Dashboard ─────────────────────────────────────────────────

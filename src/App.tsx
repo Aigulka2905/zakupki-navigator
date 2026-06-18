@@ -32,6 +32,7 @@ const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage.tsx"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const AdminPage = lazy(() => import("./pages/AdminPage.tsx"));
+const NationalRegimePage = lazy(() => import("./pages/NationalRegimePage.tsx"));
 
 function RouteFallback() {
   return (
@@ -75,6 +76,8 @@ const App = () => (
         <Routes>
           {/* Публичные маршруты */}
           <Route path="/login" element={<LoginPage />} />
+          {/* /register — точка входа по ссылке-приглашению (?invite=…) */}
+          <Route path="/register" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -95,6 +98,7 @@ const App = () => (
           <Route path="/instructions" element={<ProtectedRoute><InstructionsPage /></ProtectedRoute>} />
           <Route path="/check-supplier" element={<ProtectedRoute><CheckSupplierPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/national-regime" element={<ProtectedRoute><NationalRegimePage /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

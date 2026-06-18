@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Link, useSearchParams } from "react-router-dom";
@@ -27,13 +27,19 @@ import {
   ArrowUpDown,
   Star,
   Hash,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Procurement, PaginatedResponse, FavoriteOrg } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/Reveal";
 
 type SortOption = "createdAt_desc" | "applicationDeadline_asc" | "initialPrice_desc" | "relevanceScore_desc";
+
+const PAGE_SIZE = 20;
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "createdAt_desc",          label: "Новые первыми" },
@@ -51,15 +57,23 @@ async function fetchProcurements(
   customerInn: string,
   onlyFavorites: boolean,
   onlyMine: boolean,
+  procedureType: string,
+  page: number,
 ): Promise<PaginatedResponse<Procurement>> {
   const [sortBy, sortDir] = sort.split("_") as [string, string];
-  const params = new URLSearchParams({ page: "1", limit: "50", sortBy, sortDir });
-  if (search)        params.set("search", search);
+  const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sortBy, sortDir });
+  if (search)           params.set("search", search);
   if (status !== "all") params.set("status", status);
-  if (customerInn)   params.set("customerInn", customerInn);
-  if (onlyFavorites) params.set("onlyFavorites", "true");
-  if (onlyMine)      params.set("onlyMine", "true");
+  if (customerInn)      params.set("customerInn", customerInn);
+  if (onlyFavorites)    params.set("onlyFavorites", "true");
+  if (onlyMine)         params.set("onlyMine", "true");
+  if (procedureType && procedureType !== "all") params.set("procedureType", procedureType);
   const { data } = await apiClient.get<PaginatedResponse<Procurement>>(`/procurements?${params}`);
+  return data;
+}
+
+async function syncForMe(): Promise<{ imported: number; updated: number }> {
+  const { data } = await apiClient.post("/procurements/sync-for-me");
   return data;
 }
 
@@ -98,19 +112,34 @@ function urgencyBadgeCls(days: number) {
   return "bg-muted/40 text-muted-foreground/60";
 }
 
-const STATUS_META: Record<string, { label: string; cls: string }> = {
+// Цвета по statusLabel (русский текст из РФТорги/АФТорги) — приоритет над status
+const LABEL_CLS: Record<string, string> = {
+  "Идет прием предложений": "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
+  "Идёт прием заявок":      "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
+  "Опубликована":           "bg-indigo-500/10 text-indigo-400 ring-indigo-500/20",
+  "Активна":                "bg-indigo-500/10 text-indigo-400 ring-indigo-500/20",
+  "Подведение итогов":      "bg-amber-500/10 text-amber-400 ring-amber-500/20",
+  "На рассмотрении":        "bg-amber-500/10 text-amber-400 ring-amber-500/20",
+  "Окончен прием заявок":   "bg-amber-500/10 text-amber-400 ring-amber-500/20",
+  "Торги завершены":        "bg-amber-500/10 text-amber-400 ring-amber-500/20",
+  "Завершена":              "bg-muted/60 text-muted-foreground/70 ring-border/40",
+  "Отменена":               "bg-red-500/10 text-red-400 ring-red-500/20",
+  "Торги отменены":         "bg-red-500/10 text-red-400 ring-red-500/20",
+  "Отклонена":              "bg-red-500/10 text-red-400 ring-red-500/20",
+  "Черновик":               "bg-muted/60 text-muted-foreground ring-border/40",
+};
+
+const STATUS_FALLBACK: Record<string, { label: string; cls: string }> = {
   active:    { label: "Активна",   cls: "bg-indigo-500/10 text-indigo-400 ring-indigo-500/20" },
   draft:     { label: "Черновик",  cls: "bg-muted/60 text-muted-foreground ring-border/40" },
-  completed: { label: "Завершена", cls: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20" },
+  completed: { label: "Завершена", cls: "bg-muted/60 text-muted-foreground/70 ring-border/40" },
   cancelled: { label: "Отменена",  cls: "bg-red-500/10 text-red-400 ring-red-500/20" },
 };
 
 function getStatusDisplay(p: Procurement) {
-  if (p.statusLabel === "Идет прием предложений") {
-    return { label: "Идет прием предложений", cls: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20" };
-  }
-  const base = STATUS_META[p.status] ?? STATUS_META.draft;
-  return { label: p.statusLabel ?? base.label, cls: base.cls };
+  const label = p.statusLabel ?? STATUS_FALLBACK[p.status]?.label ?? "Черновик";
+  const cls   = LABEL_CLS[label] ?? STATUS_FALLBACK[p.status]?.cls ?? LABEL_CLS["Черновик"];
+  return { label, cls };
 }
 
 // ── Favorite button ───────────────────────────────────────────
@@ -181,23 +210,52 @@ function StatChip({ label, value, active, onClick }: {
   );
 }
 
+// ── Pagination helpers ────────────────────────────────────────
+
+function pageRange(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, "…", total];
+  if (current >= total - 3) return [1, "…", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "…", current - 1, current, current + 1, "…", total];
+}
+
 // ── Page ──────────────────────────────────────────────────────
 
 const ProcurementsPage = () => {
   const [searchParams] = useSearchParams();
   const onlyMine = searchParams.get("mine") === "true";
+  const qc = useQueryClient();
+  const { data: currentUser } = useCurrentUser();
+  const isCustomer = currentUser?.organization?.orgType === "customer";
 
   const [query, setQuery]             = useState("");
   const [innQuery, setInnQuery]       = useState("");
   const [etpFilter, setEtpFilter]     = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [procedureTypeFilter, setProcedureTypeFilter] = useState("all");
   const [sort, setSort]               = useState<SortOption>("createdAt_desc");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [page, setPage]               = useState(1);
+
+  useEffect(() => { setPage(1); }, [query, statusFilter, sort, innQuery, onlyFavorites, procedureTypeFilter]);
+
+  const syncMutation = useMutation({
+    mutationFn: syncForMe,
+    onSuccess: (result) => {
+      const msg = result.imported > 0 || result.updated > 0
+        ? `Найдено: ${result.imported} новых, ${result.updated} обновлено`
+        : "Закупок вашей организации на РФТорги не найдено";
+      toast.success(msg);
+      qc.invalidateQueries({ queryKey: ["procurements"] });
+    },
+    onError: () => toast.error("Не удалось выполнить поиск. Попробуйте позже."),
+  });
 
   const { data: response, isLoading, isError } = useQuery({
-    queryKey: ["procurements", query, statusFilter, sort, innQuery, onlyFavorites, onlyMine],
-    queryFn:  () => fetchProcurements(query, statusFilter, sort, innQuery, onlyFavorites, onlyMine),
+    queryKey: ["procurements", query, statusFilter, sort, innQuery, onlyFavorites, onlyMine, procedureTypeFilter, page],
+    queryFn:  () => fetchProcurements(query, statusFilter, sort, innQuery, onlyFavorites, onlyMine, procedureTypeFilter, page),
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: favorites = [] } = useQuery({
@@ -221,12 +279,37 @@ const ProcurementsPage = () => {
     return [...names] as string[];
   }, [procurements]);
 
-  const stats = useMemo(() => ({
-    total:     response?.total ?? 0,
-    active:    procurements.filter((p) => p.status === "active").length,
-    draft:     procurements.filter((p) => p.status === "draft").length,
-    completed: procurements.filter((p) => p.status === "completed").length,
-  }), [procurements, response]);
+  const STATIC_PROCEDURE_TYPES = [
+    "Запрос котировок",
+    "Запрос предложений",
+    "Открытый конкурс",
+    "Закрытый конкурс",
+    "Аукцион",
+    "Электронный аукцион",
+    "Закупка у единственного поставщика",
+    "Упрощённая закупка",
+    "Малая закупка",
+    "Коммерческая закупка",
+    "Конкурентный отбор",
+  ];
+
+  const procedureTypeOptions = useMemo(() => {
+    const dynamic = procurements.map((p) => p.procedureType).filter(Boolean) as string[];
+    const merged = new Set([...STATIC_PROCEDURE_TYPES, ...dynamic]);
+    return [...merged];
+  }, [procurements]);
+
+  const stats = useMemo(() => {
+    const total = response?.total ?? 0;
+    const counts = response?.counts;
+    return {
+      total,
+      totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      active:    counts?.active    ?? 0,
+      completed: counts?.completed ?? 0,
+      cancelled: counts?.cancelled ?? 0,
+    };
+  }, [response]);
 
   return (
     <AppLayout
@@ -257,16 +340,16 @@ const ProcurementsPage = () => {
             onClick={() => setStatusFilter(statusFilter === "active" ? "all" : "active")}
           />
           <StatChip
-            label="черновиков"
-            value={isLoading ? 0 : stats.draft}
-            active={statusFilter === "draft"}
-            onClick={() => setStatusFilter(statusFilter === "draft" ? "all" : "draft")}
-          />
-          <StatChip
             label="завершённых"
             value={isLoading ? 0 : stats.completed}
             active={statusFilter === "completed"}
             onClick={() => setStatusFilter(statusFilter === "completed" ? "all" : "completed")}
+          />
+          <StatChip
+            label="отменённых"
+            value={isLoading ? 0 : stats.cancelled}
+            active={statusFilter === "cancelled"}
+            onClick={() => setStatusFilter(statusFilter === "cancelled" ? "all" : "cancelled")}
           />
 
           {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/40" />}
@@ -310,6 +393,20 @@ const ProcurementsPage = () => {
               <SelectItem value="all">Все ЭТП</SelectItem>
               {etpOptions.map((name) => (
                 <SelectItem key={name} value={name}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Способ проведения */}
+          <Select value={procedureTypeFilter} onValueChange={setProcedureTypeFilter}>
+            <SelectTrigger className="h-9 w-44 border-border/50 bg-card/60 text-[13px] backdrop-blur-sm">
+              <Filter className="mr-1.5 h-3 w-3 text-muted-foreground/50" />
+              <SelectValue placeholder="Способ проведения" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все способы</SelectItem>
+              {procedureTypeOptions.map((t) => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -371,10 +468,27 @@ const ProcurementsPage = () => {
                   {procurements.length === 0
                     ? onlyFavorites
                       ? "Нет закупок от избранных заказчиков"
+                      : onlyMine && isCustomer
+                      ? "Закупки вашей организации ещё не загружены"
                       : "Закупки появятся после синхронизации с РФТорги"
                     : "Попробуйте изменить фильтры"}
                 </p>
               </div>
+              {onlyMine && isCustomer && procurements.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  className={cn(
+                    "mt-1 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                    "bg-indigo-500/15 text-indigo-400 ring-1 ring-inset ring-indigo-500/25",
+                    "hover:bg-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed",
+                  )}
+                >
+                  <RefreshCw className={cn("h-4 w-4", syncMutation.isPending && "animate-spin")} />
+                  {syncMutation.isPending ? "Ищем закупки на РФТорги…" : "Найти мои закупки на РФТорги"}
+                </button>
+              )}
             </div>
 
           ) : (
@@ -468,10 +582,57 @@ const ProcurementsPage = () => {
             </div>
           )}
 
-          {/* Footer: count */}
+          {/* Footer: pagination */}
           {filtered.length > 0 && (
-            <div className="border-t border-border/30 px-5 py-2.5 text-[11px] text-muted-foreground/40">
-              Показано {filtered.length} из {stats.total} закупок
+            <div className="flex items-center justify-between border-t border-border/30 px-4 py-2.5">
+              <span className="text-[11px] text-muted-foreground/40 tabular-nums">
+                {stats.total > 0
+                  ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, stats.total)} из ${stats.total}`
+                  : "0 закупок"
+                }
+              </span>
+
+              {stats.totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-border/40 bg-card/60 text-muted-foreground/60 transition hover:border-border hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+
+                  {pageRange(page, stats.totalPages).map((p, i) =>
+                    p === "…" ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-[12px] text-muted-foreground/30">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p as number)}
+                        className={cn(
+                          "flex h-7 min-w-[28px] items-center justify-center rounded border px-1.5 text-[12px] font-medium transition",
+                          p === page
+                            ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-400"
+                            : "border-border/40 bg-card/60 text-muted-foreground/60 hover:border-border hover:text-foreground",
+                        )}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={page === stats.totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-border/40 bg-card/60 text-muted-foreground/60 transition hover:border-border hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

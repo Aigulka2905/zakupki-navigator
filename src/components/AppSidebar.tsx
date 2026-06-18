@@ -2,12 +2,10 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   MessageSquare,
-  BookOpen,
   FileSearch,
   Settings,
   History,
   Briefcase,
-  FileText,
   Calendar,
   Building2,
   CreditCard,
@@ -19,6 +17,7 @@ import {
   ChevronRight,
   Bell,
   ShieldCheck,
+  Flag,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -148,20 +147,17 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Чат с ассистентом",    url: "/chat",                   icon: MessageSquare },
         { title: "Мои закупки",          url: "/procurements?mine=true", icon: Briefcase },
         { title: "Все закупки",          url: "/procurements",           icon: Briefcase },
-        { title: "База знаний",          url: "/knowledge",              icon: BookOpen },
         { title: "Анализ документа",     url: "/analysis",               icon: FileSearch },
-        { title: "Шаблоны",             url: "/templates",              icon: FileText },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Профиль организации", url: "/organization",           icon: Building2 },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
+        { title: "Национальный режим",  url: "/national-regime",        icon: Flag },
       ]
     : [
         { title: "Главная",              url: "/",               icon: LayoutDashboard },
         { title: "Чат с ассистентом",    url: "/chat",           icon: MessageSquare },
         { title: "Все закупки",          url: "/procurements",   icon: Briefcase },
         { title: "Уведомления",          url: "/notifications",  icon: Bell },
-        { title: "База знаний",          url: "/knowledge",      icon: BookOpen },
-        { title: "Шаблоны",             url: "/templates",      icon: FileText },
         { title: "Календарь дедлайнов", url: "/calendar",       icon: Calendar },
         { title: "Профиль организации", url: "/organization",    icon: Building2 },
       ];

@@ -31,6 +31,7 @@ import {
   BarChart2,
   ScrollText,
   RefreshCw,
+  RotateCcw,
   Search,
   ChevronDown,
   ChevronRight,
@@ -46,8 +47,12 @@ import {
   useUpdateOrgPlan,
   useAdminLogs,
   useAdminAudit,
+  useSyncStatus,
+  useSyncRftorgi,
+  useSyncAftorgi,
 } from "@/hooks/useAdmin";
 import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
+import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
@@ -271,6 +276,100 @@ function UsersTab() {
 
 // ── Parameters tab ────────────────────────────────────────────
 
+function relTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return "только что";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин назад`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч назад`;
+  return new Date(iso).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function SyncCard({ title, onSync, isPending, lastSyncAt, procurementCount, statusLoading }: {
+  title: string;
+  onSync: () => void;
+  isPending: boolean;
+  lastSyncAt?: string | null;
+  procurementCount?: number;
+  statusLoading?: boolean;
+}) {
+  return (
+    <Card className="border-border/60 dark:border-white/[0.06] dark:bg-white/[0.02]">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <RotateCcw className="h-4 w-4 text-indigo-400" />
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-4">
+          <dl className="flex flex-wrap gap-x-8 gap-y-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Последняя синхронизация</dt>
+              <dd className="text-xs font-medium text-foreground mt-0.5">
+                {statusLoading ? "..." : lastSyncAt ? relTime(lastSyncAt) : "Нет данных"}
+              </dd>
+            </div>
+            {procurementCount !== undefined && (
+              <div>
+                <dt className="text-xs text-muted-foreground">Закупок в базе</dt>
+                <dd className="text-xs font-medium text-foreground mt-0.5">
+                  {statusLoading ? "..." : procurementCount.toLocaleString("ru-RU")}
+                </dd>
+              </div>
+            )}
+          </dl>
+
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={onSync}
+            className={cn(
+              "ml-auto flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+              "bg-indigo-500/15 text-indigo-400 ring-1 ring-inset ring-indigo-500/25",
+              "hover:bg-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed",
+            )}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isPending && "animate-spin")} />
+            {isPending ? "Запускается..." : "Запустить"}
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SyncCards() {
+  const { data: status, isLoading: statusLoading } = useSyncStatus();
+  const { mutate: triggerRftorgi, isPending: rftorgiPending } = useSyncRftorgi();
+  const { mutate: triggerAftorgi, isPending: aftorgiPending } = useSyncAftorgi();
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:col-span-3 sm:col-span-2">
+      <SyncCard
+        title="Синхронизация РФТорги"
+        isPending={rftorgiPending}
+        lastSyncAt={status?.lastSyncAt}
+        procurementCount={status?.procurementCount}
+        statusLoading={statusLoading}
+        onSync={() => triggerRftorgi(undefined, {
+          onSuccess: () => toast.success("РФТорги: синхронизация поставлена в очередь"),
+          onError: () => toast.error("Не удалось запустить синхронизацию"),
+        })}
+      />
+      <SyncCard
+        title="Синхронизация АФ Торги"
+        isPending={aftorgiPending}
+        lastSyncAt={status?.lastSyncAt}
+        statusLoading={statusLoading}
+        onSync={() => triggerAftorgi(undefined, {
+          onSuccess: () => toast.success("АФ Торги: синхронизация поставлена в очередь"),
+          onError: () => toast.error("Не удалось запустить синхронизацию"),
+        })}
+      />
+    </div>
+  );
+}
+
 function ParametersTab() {
   const { data: sys } = useSystemInfo();
   const { data: stats } = useAdminStats();
@@ -361,6 +460,8 @@ function ParametersTab() {
             : []),
         ]}
       />
+
+      <SyncCards />
     </div>
   );
 }
@@ -386,7 +487,7 @@ const LEVEL_BADGE: Record<LogLevel, string> = {
   trace: "bg-slate-500/10 text-slate-300 border-slate-500/15",
 };
 
-function relTime(ts: number) {
+function relTimeMs(ts: number) {
   const diff = Date.now() - ts;
   if (diff < 60_000) return `${Math.floor(diff / 1000)}с`;
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}м`;
@@ -505,7 +606,7 @@ function LogsTab() {
 
         <span className="text-xs text-muted-foreground ml-auto">
           {entries.length} записей
-          {dataUpdatedAt ? ` · обновлено ${relTime(dataUpdatedAt)} назад` : ""}
+          {dataUpdatedAt ? ` · обновлено ${relTimeMs(dataUpdatedAt)} назад` : ""}
         </span>
       </div>
 
@@ -552,7 +653,7 @@ function LogsTab() {
                         : <ChevronRight className="h-3.5 w-3.5" />}
                     </td>
                     <td className="py-2 px-3 text-muted-foreground whitespace-nowrap font-mono">
-                      {relTime(entry.time)}
+                      {relTimeMs(entry.time)}
                     </td>
                     <td className="py-2 px-3">
                       <Badge
@@ -630,6 +731,7 @@ const ACTION_LABELS: Record<string, string> = {
   "admin.role_update":             "Изменение роли",
   "admin.plan_update":             "Изменение тарифа",
   "admin.model_change":            "Смена AI-модели",
+  "admin.sync_rftorgi":            "Синхронизация РФТорги",
 };
 
 const ACTION_CATEGORY_STYLE: Record<string, string> = {

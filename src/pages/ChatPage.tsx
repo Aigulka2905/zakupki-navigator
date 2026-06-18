@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
+import { Markdown } from "@/components/Markdown";
 import {
   Send, FileCheck2, Scale, CalendarClock, Sparkles, Bot,
   Loader2, Building2, ExternalLink, MessageSquare, BookOpen,
@@ -94,10 +95,10 @@ function AssistantBubble({ content }: { content: string }) {
         <Bot className="h-3.5 w-3.5 text-white" />
       </div>
 
-      <div className="min-w-0 flex-1 max-w-[85%]">
-        {/* Message card */}
-        <div className="rounded-2xl rounded-tl-sm border border-border/40 bg-card/70 px-5 py-4 text-[14px] leading-[1.7] text-foreground backdrop-blur-sm whitespace-pre-wrap">
-          {content}
+      <div className="min-w-0 flex-1 max-w-[92%]">
+        {/* Message card — markdown от ИИ (таблицы, жирный, списки) */}
+        <div className="rounded-2xl rounded-tl-sm border border-border/40 bg-card/70 px-5 py-4 text-[14px] leading-[1.7] text-foreground backdrop-blur-sm">
+          <Markdown content={content} />
         </div>
 
         {/* Actions row (on hover) */}
@@ -605,7 +606,7 @@ function ChatDocsPanel({
 const ChatPage = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const procurementId = searchParams.get("procurement") ?? undefined;
   const sessionId = searchParams.get("session") ?? undefined;
 
@@ -622,6 +623,8 @@ const ChatPage = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
+  const autoQueryRef  = useRef(searchParams.get('q') ?? '');
+  const autoSentRef   = useRef(false);
 
   // ── Inline document attachment ─────────────────────────────────
   const chatDocsKey = ["chat-docs", sessionId ?? null, procurementId ?? null];
@@ -719,6 +722,15 @@ const ChatPage = () => {
       toast.error(msg ?? "Ошибка при отправке");
     },
   });
+
+  // ── Auto-send message arriving from Dashboard "Спросите ассистента" ──
+  useEffect(() => {
+    const q = autoQueryRef.current;
+    if (!q || autoSentRef.current || historyLoading) return;
+    autoSentRef.current = true;
+    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.delete('q'); return n; }, { replace: true });
+    sendMsg({ message: q, sessionId, procurementId, docId });
+  }, [historyLoading, sendMsg, sessionId, procurementId, docId, setSearchParams]);
 
   // ── New chat ───────────────────────────────────────────────────
   const handleNewChat = useCallback(async () => {
