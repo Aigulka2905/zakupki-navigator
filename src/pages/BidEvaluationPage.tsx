@@ -6,18 +6,22 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, FileText, Loader2, Printer, CheckCircle2, AlertTriangle,
-  XCircle, ClipboardCheck, FileCheck2, Clock,
+  XCircle, ClipboardCheck, FileCheck2, Clock, Plus, Trash2, Users,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 
 interface BidResult {
   participantName: string;
-  fileName: string;
+  fileNames?: string[];
   verdict: string;
   score: number | null;
   recommendation: string;
   strengths: string[];
   weaknesses: string[];
+}
+interface Participant {
+  name: string;
+  files: File[];
 }
 interface Evaluation {
   id: string;
@@ -52,9 +56,16 @@ const PRINT_CSS = `
 export default function BidEvaluationPage() {
   const [title, setTitle] = useState("");
   const [specFiles, setSpecFiles] = useState<File[]>([]);
-  const [bidFiles, setBidFiles] = useState<File[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([{ name: "", files: [] }]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const addParticipant = () => setParticipants((p) => [...p, { name: "", files: [] }]);
+  const removeParticipant = (i: number) => setParticipants((p) => p.length > 1 ? p.filter((_, j) => j !== i) : p);
+  const setParticipantName = (i: number, name: string) =>
+    setParticipants((p) => p.map((x, j) => (j === i ? { ...x, name } : x)));
+  const setParticipantFiles = (i: number, files: File[]) =>
+    setParticipants((p) => p.map((x, j) => (j === i ? { ...x, files } : x)));
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [current, setCurrent] = useState<Evaluation | null>(null);
@@ -90,19 +101,22 @@ export default function BidEvaluationPage() {
   const submit = async () => {
     setError(null);
     if (specFiles.length === 0) { setError("Загрузите документацию закупки (ТЗ)"); return; }
-    if (bidFiles.length === 0) { setError("Загрузите хотя бы одну заявку участника"); return; }
+    const filled = participants.filter((p) => p.files.length > 0);
+    if (filled.length === 0) { setError("Добавьте хотя бы одного участника с документами"); return; }
 
     const form = new FormData();
     form.append("title", title);
     specFiles.forEach((f) => form.append("spec", f));
-    bidFiles.forEach((f) => form.append("bids", f));
+    // Имена участников выровнены по индексу с полями p_<i>.
+    form.append("names", JSON.stringify(filled.map((p) => p.name.trim())));
+    filled.forEach((p, i) => p.files.forEach((f) => form.append(`p_${i}`, f)));
 
     setUploading(true);
     try {
       const { data } = await apiClient.post<Evaluation>("/bid-evaluation", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setTitle(""); setSpecFiles([]); setBidFiles([]);
+      setTitle(""); setSpecFiles([]); setParticipants([{ name: "", files: [] }]);
       openEvaluation(data.id);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } };
@@ -127,45 +141,55 @@ export default function BidEvaluationPage() {
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="напр. Поставка офисной бумаги А4" className="mt-1 max-w-md" />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              {/* Spec */}
-              <div>
-                <label className="text-sm font-medium">Документация закупки (ТЗ, можно несколько)</label>
-                <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
-                  <FileText className="h-4 w-4 text-primary shrink-0" />
-                  <span className="truncate text-muted-foreground">{specFiles.length ? `Выбрано файлов: ${specFiles.length}` : "Выберите файлы (PDF, DOCX, XLSX, TXT)"}</span>
-                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
-                    onChange={(e) => setSpecFiles(Array.from(e.target.files ?? []))} />
-                </label>
-              </div>
-              {/* Bids */}
-              <div>
-                <label className="text-sm font-medium">Заявки участников (можно несколько)</label>
-                <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
-                  <Upload className="h-4 w-4 text-primary shrink-0" />
-                  <span className="truncate text-muted-foreground">{bidFiles.length ? `Выбрано файлов: ${bidFiles.length}` : "Выберите файлы заявок"}</span>
-                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
-                    onChange={(e) => setBidFiles(Array.from(e.target.files ?? []))} />
-                </label>
-              </div>
+            {/* Документация закупки (ТЗ) */}
+            <div>
+              <label className="text-sm font-medium">Документация закупки (ТЗ, можно несколько)</label>
+              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
+                <FileText className="h-4 w-4 text-primary shrink-0" />
+                <span className="truncate text-muted-foreground">{specFiles.length ? `Выбрано файлов: ${specFiles.length}` : "Выберите файлы (PDF, DOCX, XLSX, TXT)"}</span>
+                <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
+                  onChange={(e) => setSpecFiles(Array.from(e.target.files ?? []))} />
+              </label>
+              {specFiles.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {specFiles.map((f, i) => <Badge key={i} variant="secondary" className="text-[11px] font-normal">{f.name}</Badge>)}
+                </div>
+              )}
             </div>
 
-            {specFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <span className="text-[11px] text-muted-foreground self-center">ТЗ:</span>
-                {specFiles.map((f, i) => (
-                  <Badge key={i} variant="secondary" className="text-[11px] font-normal">{f.name}</Badge>
+            {/* Участники и их комплекты документов */}
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium flex items-center gap-1.5"><Users className="h-4 w-4" /> Участники и их документы</label>
+                <Button size="sm" variant="outline" onClick={addParticipant}><Plus className="mr-1 h-3.5 w-3.5" />Добавить участника</Button>
+              </div>
+              <div className="mt-2 space-y-3">
+                {participants.map((p, i) => (
+                  <div key={i} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-2">
+                      <Input value={p.name} onChange={(e) => setParticipantName(i, e.target.value)}
+                        placeholder={`Участник ${i + 1} — название организации`} className="max-w-sm" />
+                      {participants.length > 1 && (
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => removeParticipant(i)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm hover:border-primary/40">
+                      <Upload className="h-4 w-4 text-primary shrink-0" />
+                      <span className="truncate text-muted-foreground">{p.files.length ? `Документов: ${p.files.length}` : "Прикрепить документы участника (несколько)"}</span>
+                      <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
+                        onChange={(e) => setParticipantFiles(i, Array.from(e.target.files ?? []))} />
+                    </label>
+                    {p.files.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {p.files.map((f, j) => <Badge key={j} variant="outline" className="text-[11px] font-normal">{f.name}</Badge>)}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
-            )}
-            {bidFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <span className="text-[11px] text-muted-foreground self-center">Заявки:</span>
-                {bidFiles.map((f, i) => (
-                  <Badge key={i} variant="outline" className="text-[11px] font-normal">{f.name}</Badge>
-                ))}
-              </div>
-            )}
+            </div>
 
             {error && (
               <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -178,7 +202,7 @@ export default function BidEvaluationPage() {
                 {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ClipboardCheck className="mr-1.5 h-4 w-4" />}
                 Проанализировать заявки
               </Button>
-              <p className="mt-1.5 text-xs text-muted-foreground">Имя участника берётся из имени файла заявки. Поддержка: PDF, DOCX, XLSX, TXT.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">Каждый участник оценивается по всему своему комплекту документов. Если имя не указано — берётся из имени файла. Поддержка: PDF, DOCX, XLSX, TXT.</p>
             </div>
           </div>
         </Card>
@@ -275,7 +299,10 @@ export default function BidEvaluationPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(current.results ?? []).map((r, i) => (
                     <div key={i} className="rounded-lg border border-border p-3">
-                      <p className="font-medium text-sm mb-2">{r.participantName}</p>
+                      <p className="font-medium text-sm">{r.participantName}</p>
+                      {r.fileNames && r.fileNames.length > 0 && (
+                        <p className="mb-2 text-[11px] text-muted-foreground">Документы: {r.fileNames.join(", ")}</p>
+                      )}
                       {r.strengths?.length > 0 && (
                         <div className="mb-2">
                           <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-0.5">Соответствует / сильные стороны</p>
