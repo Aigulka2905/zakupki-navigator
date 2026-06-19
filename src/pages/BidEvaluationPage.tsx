@@ -10,14 +10,20 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 
+type Finding = string | { text: string; ref?: string };
 interface BidResult {
   participantName: string;
   fileNames?: string[];
   verdict: string;
   score: number | null;
   recommendation: string;
-  strengths: string[];
-  weaknesses: string[];
+  strengths: Finding[];
+  weaknesses: Finding[];
+}
+// Нормализует пункт к { text, ref } (поддержка старого строкового формата).
+function asFinding(f: Finding): { text: string; ref: string } {
+  if (typeof f === "string") return { text: f, ref: "" };
+  return { text: f?.text ?? "", ref: f?.ref ?? "" };
 }
 interface Participant {
   name: string;
@@ -307,7 +313,9 @@ export default function BidEvaluationPage() {
                         <div className="mb-2">
                           <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-0.5">Соответствует / сильные стороны</p>
                           <ul className="space-y-0.5">
-                            {r.strengths.map((s, j) => <li key={j} className="text-xs text-muted-foreground flex gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />{s}</li>)}
+                            {r.strengths.map((s, j) => { const f = asFinding(s); return (
+                              <li key={j} className="text-xs text-muted-foreground flex gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /><span>{f.text}{f.ref && <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-foreground/70">{f.ref}</span>}</span></li>
+                            ); })}
                           </ul>
                         </div>
                       )}
@@ -315,7 +323,9 @@ export default function BidEvaluationPage() {
                         <div>
                           <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-0.5">Несоответствия / риски</p>
                           <ul className="space-y-0.5">
-                            {r.weaknesses.map((s, j) => <li key={j} className="text-xs text-muted-foreground flex gap-1.5"><XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />{s}</li>)}
+                            {r.weaknesses.map((s, j) => { const f = asFinding(s); return (
+                              <li key={j} className="text-xs text-muted-foreground flex gap-1.5"><XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" /><span>{f.text}{f.ref && <span className="ml-1 rounded bg-red-500/10 px-1 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">{f.ref}</span>}</span></li>
+                            ); })}
                           </ul>
                         </div>
                       )}
