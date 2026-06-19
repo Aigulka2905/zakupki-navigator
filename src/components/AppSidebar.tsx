@@ -18,6 +18,7 @@ import {
   Bell,
   ShieldCheck,
   Flag,
+  ClipboardCheck,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -148,6 +149,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Мои закупки",          url: "/procurements?mine=true", icon: Briefcase },
         { title: "Все закупки",          url: "/procurements",           icon: Briefcase },
         { title: "Анализ документа",     url: "/analysis",               icon: FileSearch },
+        { title: "Оценка заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Профиль организации", url: "/organization",           icon: Building2 },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
@@ -157,6 +159,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Главная",              url: "/",               icon: LayoutDashboard },
         { title: "Чат с ассистентом",    url: "/chat",           icon: MessageSquare },
         { title: "Все закупки",          url: "/procurements",   icon: Briefcase },
+        { title: "Оценка заявок",        url: "/bid-evaluation", icon: ClipboardCheck },
         { title: "Уведомления",          url: "/notifications",  icon: Bell },
         { title: "Календарь дедлайнов", url: "/calendar",       icon: Calendar },
         { title: "Профиль организации", url: "/organization",    icon: Building2 },

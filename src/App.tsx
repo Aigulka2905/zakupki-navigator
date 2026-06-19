@@ -15,6 +15,7 @@ const Index = lazy(() => import("./pages/Index.tsx"));
 const ChatPage = lazy(() => import("./pages/ChatPage.tsx"));
 const KnowledgeBase = lazy(() => import("./pages/KnowledgeBase.tsx"));
 const DocumentAnalysis = lazy(() => import("./pages/DocumentAnalysis.tsx"));
+const BidEvaluationPage = lazy(() => import("./pages/BidEvaluationPage.tsx"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage.tsx"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
 const ProcurementsPage = lazy(() => import("./pages/ProcurementsPage.tsx"));
@@ -87,6 +88,7 @@ const App = () => (
           <Route path="/chat" element={<ProtectedRoute><ChatPageWithKey /></ProtectedRoute>} />
           <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
           <Route path="/analysis" element={<ProtectedRoute><DocumentAnalysis /></ProtectedRoute>} />
+          <Route path="/bid-evaluation" element={<ProtectedRoute><BidEvaluationPage /></ProtectedRoute>} />
           <Route path="/procurements" element={<ProtectedRoute><ProcurementsPage /></ProtectedRoute>} />
           <Route path="/procurements/:id" element={<ProtectedRoute><ProcurementDetailPage /></ProtectedRoute>} />
           <Route path="/templates" element={<ProtectedRoute><TemplatesPage /></ProtectedRoute>} />
