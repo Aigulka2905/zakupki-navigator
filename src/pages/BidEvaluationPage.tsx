@@ -51,7 +51,7 @@ const PRINT_CSS = `
 
 export default function BidEvaluationPage() {
   const [title, setTitle] = useState("");
-  const [specFile, setSpecFile] = useState<File | null>(null);
+  const [specFiles, setSpecFiles] = useState<File[]>([]);
   const [bidFiles, setBidFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,12 +89,12 @@ export default function BidEvaluationPage() {
 
   const submit = async () => {
     setError(null);
-    if (!specFile) { setError("Загрузите документацию закупки (ТЗ)"); return; }
+    if (specFiles.length === 0) { setError("Загрузите документацию закупки (ТЗ)"); return; }
     if (bidFiles.length === 0) { setError("Загрузите хотя бы одну заявку участника"); return; }
 
     const form = new FormData();
     form.append("title", title);
-    form.append("spec", specFile);
+    specFiles.forEach((f) => form.append("spec", f));
     bidFiles.forEach((f) => form.append("bids", f));
 
     setUploading(true);
@@ -102,7 +102,7 @@ export default function BidEvaluationPage() {
       const { data } = await apiClient.post<Evaluation>("/bid-evaluation", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setTitle(""); setSpecFile(null); setBidFiles([]);
+      setTitle(""); setSpecFiles([]); setBidFiles([]);
       openEvaluation(data.id);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } };
@@ -130,12 +130,12 @@ export default function BidEvaluationPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Spec */}
               <div>
-                <label className="text-sm font-medium">Документация закупки (ТЗ)</label>
+                <label className="text-sm font-medium">Документация закупки (ТЗ, можно несколько)</label>
                 <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
                   <FileText className="h-4 w-4 text-primary shrink-0" />
-                  <span className="truncate text-muted-foreground">{specFile ? specFile.name : "Выберите файл (PDF, DOCX, TXT)"}</span>
-                  <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
-                    onChange={(e) => setSpecFile(e.target.files?.[0] ?? null)} />
+                  <span className="truncate text-muted-foreground">{specFiles.length ? `Выбрано файлов: ${specFiles.length}` : "Выберите файлы (PDF, DOCX, XLSX, TXT)"}</span>
+                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
+                    onChange={(e) => setSpecFiles(Array.from(e.target.files ?? []))} />
                 </label>
               </div>
               {/* Bids */}
@@ -144,14 +144,23 @@ export default function BidEvaluationPage() {
                 <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
                   <Upload className="h-4 w-4 text-primary shrink-0" />
                   <span className="truncate text-muted-foreground">{bidFiles.length ? `Выбрано файлов: ${bidFiles.length}` : "Выберите файлы заявок"}</span>
-                  <input type="file" multiple accept=".pdf,.doc,.docx,.txt" className="hidden"
+                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
                     onChange={(e) => setBidFiles(Array.from(e.target.files ?? []))} />
                 </label>
               </div>
             </div>
 
+            {specFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                <span className="text-[11px] text-muted-foreground self-center">ТЗ:</span>
+                {specFiles.map((f, i) => (
+                  <Badge key={i} variant="secondary" className="text-[11px] font-normal">{f.name}</Badge>
+                ))}
+              </div>
+            )}
             {bidFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
+                <span className="text-[11px] text-muted-foreground self-center">Заявки:</span>
                 {bidFiles.map((f, i) => (
                   <Badge key={i} variant="outline" className="text-[11px] font-normal">{f.name}</Badge>
                 ))}
@@ -169,7 +178,7 @@ export default function BidEvaluationPage() {
                 {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ClipboardCheck className="mr-1.5 h-4 w-4" />}
                 Проанализировать заявки
               </Button>
-              <p className="mt-1.5 text-xs text-muted-foreground">Имя участника берётся из имени файла заявки. Поддержка: PDF, DOCX, TXT.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">Имя участника берётся из имени файла заявки. Поддержка: PDF, DOCX, XLSX, TXT.</p>
             </div>
           </div>
         </Card>
