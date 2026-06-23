@@ -16,6 +16,8 @@ interface BidResult {
   fileNames?: string[];
   verdict: string;
   score: number | null;
+  price?: string;
+  deliveryTerm?: string;
   recommendation: string;
   strengths: Finding[];
   weaknesses: Finding[];
@@ -265,7 +267,10 @@ export default function BidEvaluationPage() {
                 </div>
 
                 {current.summary && (
-                  <div className="rounded-lg bg-primary-soft px-4 py-3 text-sm">{current.summary}</div>
+                  <div className="rounded-lg bg-primary-soft px-4 py-3 text-sm">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">Общий вывод по закупке</p>
+                    {current.summary}
+                  </div>
                 )}
 
                 {/* Сводная таблица */}
@@ -277,6 +282,8 @@ export default function BidEvaluationPage() {
                         <th className="px-3 py-2">Участник</th>
                         <th className="px-3 py-2">Вердикт</th>
                         <th className="px-3 py-2 text-center">Соответствие</th>
+                        <th className="px-3 py-2">Цена</th>
+                        <th className="px-3 py-2">Срок</th>
                         <th className="px-3 py-2">Рекомендация</th>
                       </tr>
                     </thead>
@@ -293,6 +300,8 @@ export default function BidEvaluationPage() {
                               </span>
                             </td>
                             <td className="px-3 py-2.5 text-center font-semibold">{r.score ?? "—"}{r.score != null && <span className="text-xs text-muted-foreground">/100</span>}</td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">{r.price || "—"}</td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">{r.deliveryTerm || "—"}</td>
                             <td className="px-3 py-2.5 text-muted-foreground">{r.recommendation || "—"}</td>
                           </tr>
                         );
