@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Flag,
   ClipboardCheck,
+  Calculator,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -150,6 +151,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Все закупки",          url: "/procurements",           icon: Briefcase },
         { title: "Анализ документа",     url: "/analysis",               icon: FileSearch },
         { title: "Оценка заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
+        { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Профиль организации", url: "/organization",           icon: Building2 },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
@@ -160,6 +162,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Чат с ассистентом",    url: "/chat",           icon: MessageSquare },
         { title: "Все закупки",          url: "/procurements",   icon: Briefcase },
         { title: "Оценка заявок",        url: "/bid-evaluation", icon: ClipboardCheck },
+        { title: "Обоснование НМЦ",      url: "/nmck",           icon: Calculator },
         { title: "Уведомления",          url: "/notifications",  icon: Bell },
         { title: "Календарь дедлайнов", url: "/calendar",       icon: Calendar },
         { title: "Профиль организации", url: "/organization",    icon: Building2 },

@@ -1,0 +1,283 @@
+import { useEffect, useRef, useState } from "react";
+import { AppLayout } from "@/components/AppLayout";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Upload, FileText, Loader2, Printer, Calculator, Plus, Trash2,
+  AlertTriangle, FileCheck2, XCircle, Sparkles, Clock,
+} from "lucide-react";
+import apiClient from "@/lib/api-client";
+
+interface Price { source: string; unitPrice: number | string; }
+interface Position { name: string; unit: string; quantity: number | string; prices: Price[]; }
+interface Calc {
+  id: string; title: string; status: "processing" | "completed" | "failed";
+  positions?: Position[]; nmck?: number | null; cvMax?: number | null;
+  justification?: string | null; sources?: { name: string }[]; createdAt: string;
+}
+interface HistoryItem { id: string; title: string; status: Calc["status"]; nmck: number | null; createdAt: string; }
+
+const CV_THRESHOLD = 33;
+const MIN_SOURCES = 3;
+const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—");
+
+// Локальный расчёт для живого превью (сервер — источник истины при сохранении).
+function compute(positions: Position[]) {
+  let nmck = 0, cvMax = 0;
+  const rows = positions.map((p) => {
+    const prices = p.prices.map((x) => Number(x.unitPrice)).filter((v) => Number.isFinite(v) && v > 0);
+    const n = prices.length;
+    let avg = 0, cv = 0;
+    if (n > 0) {
+      avg = prices.reduce((s, v) => s + v, 0) / n;
+      if (n >= 2 && avg > 0) {
+        const variance = prices.reduce((s, v) => s + (v - avg) ** 2, 0) / (n - 1);
+        cv = (Math.sqrt(variance) / avg) * 100;
+      }
+    }
+    const qty = Number(p.quantity) || 0;
+    const sum = avg * qty;
+    nmck += sum; cvMax = Math.max(cvMax, cv);
+    return { avg, cv, sum, n };
+  });
+  return { rows, nmck, cvMax };
+}
+
+const PRINT_CSS = `
+@media print {
+  body * { visibility: hidden !important; }
+  #nmck-report, #nmck-report * { visibility: visible !important; }
+  #nmck-report { position: absolute; left: 0; top: 0; width: 100%; }
+  .no-print { display: none !important; }
+}`;
+
+export default function NmckPage() {
+  const [title, setTitle] = useState("");
+  const [specFiles, setSpecFiles] = useState<File[]>([]);
+  const [kpFiles, setKpFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [calc, setCalc] = useState<Calc | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [justifying, setJustifying] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
+  const loadHistory = async () => {
+    try { const { data } = await apiClient.get<HistoryItem[]>("/nmck"); setHistory(data); } catch { /* ignore */ }
+  };
+  useEffect(() => { loadHistory(); return () => { if (pollRef.current) window.clearTimeout(pollRef.current); }; }, []);
+
+  const open = async (id: string) => {
+    if (pollRef.current) window.clearTimeout(pollRef.current);
+    try {
+      const { data } = await apiClient.get<Calc>(`/nmck/${id}`);
+      setCalc(data);
+      setPositions(Array.isArray(data.positions) ? data.positions : []);
+      if (data.status === "processing") pollRef.current = window.setTimeout(() => open(id), 1500);
+      else loadHistory();
+    } catch { setError("Не удалось загрузить расчёт"); }
+  };
+
+  const submit = async () => {
+    setError(null);
+    if (kpFiles.length === 0) { setError("Загрузите хотя бы одно коммерческое предложение"); return; }
+    const form = new FormData();
+    form.append("title", title);
+    specFiles.forEach((f) => form.append("spec", f));
+    kpFiles.forEach((f) => form.append("kp", f));
+    setUploading(true);
+    try {
+      const { data } = await apiClient.post<Calc>("/nmck", form, { headers: { "Content-Type": "multipart/form-data" } });
+      setTitle(""); setSpecFiles([]); setKpFiles([]);
+      open(data.id);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } };
+      setError(err.response?.data?.error ?? "Не удалось запустить расчёт");
+    } finally { setUploading(false); }
+  };
+
+  // редактирование позиций
+  const upd = (fn: (p: Position[]) => Position[]) => setPositions((prev) => fn(prev.map((x) => ({ ...x, prices: [...x.prices] }))));
+  const setField = (i: number, k: keyof Position, v: string) => upd((p) => { (p[i] as Record<string, unknown>)[k] = v; return p; });
+  const setPrice = (i: number, j: number, k: keyof Price, v: string) => upd((p) => { (p[i].prices[j] as Record<string, unknown>)[k] = v; return p; });
+  const addPrice = (i: number) => upd((p) => { p[i].prices.push({ source: "", unitPrice: "" }); return p; });
+  const delPrice = (i: number, j: number) => upd((p) => { p[i].prices.splice(j, 1); return p; });
+  const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", prices: [{ source: "", unitPrice: "" }] }]);
+  const delPosition = (i: number) => upd((p) => p.filter((_, j) => j !== i));
+
+  const save = async () => {
+    if (!calc) return;
+    setSaving(true); setError(null);
+    try {
+      const { data } = await apiClient.put<Calc>(`/nmck/${calc.id}`, { title: calc.title, positions });
+      setCalc(data); setPositions(Array.isArray(data.positions) ? data.positions : positions);
+      loadHistory();
+    } catch { setError("Не удалось сохранить"); } finally { setSaving(false); }
+  };
+
+  const justify = async () => {
+    if (!calc) return;
+    setJustifying(true); setError(null);
+    try {
+      await apiClient.put(`/nmck/${calc.id}`, { title: calc.title, positions }); // сначала сохраняем правки
+      const { data } = await apiClient.post<Calc>(`/nmck/${calc.id}/justify`, {});
+      setCalc(data); setPositions(Array.isArray(data.positions) ? data.positions : positions);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } };
+      setError(err.response?.data?.error ?? "Не удалось сформировать обоснование");
+    } finally { setJustifying(false); }
+  };
+
+  const fmtDate = (s: string) => new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  const live = compute(positions);
+  const fewSources = live.rows.some((r) => r.n > 0 && r.n < MIN_SOURCES);
+
+  return (
+    <AppLayout title="Обоснование НМЦ" subtitle="Расчёт начальной (максимальной) цены методом анализа рынка (Приказ №567)">
+      <style>{PRINT_CSS}</style>
+      <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
+
+        {/* Форма загрузки */}
+        <Card className="p-6 no-print">
+          <div className="grid gap-4">
+            <div>
+              <label className="text-sm font-medium">Название закупки</label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="напр. Поставка цветного металла" className="mt-1 max-w-md" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium">Спецификация (опционально)</label>
+                <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
+                  <FileText className="h-4 w-4 text-primary shrink-0" />
+                  <span className="truncate text-muted-foreground">{specFiles.length ? `Файлов: ${specFiles.length}` : "Позиции и количество (PDF, DOCX, XLSX)"}</span>
+                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden" onChange={(e) => setSpecFiles(Array.from(e.target.files ?? []))} />
+                </label>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Коммерческие предложения (≥3)</label>
+                <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
+                  <Upload className="h-4 w-4 text-primary shrink-0" />
+                  <span className="truncate text-muted-foreground">{kpFiles.length ? `Файлов: ${kpFiles.length}` : "Загрузите КП поставщиков"}</span>
+                  <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden" onChange={(e) => setKpFiles(Array.from(e.target.files ?? []))} />
+                </label>
+              </div>
+            </div>
+            {error && <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
+            <div>
+              <Button onClick={submit} disabled={uploading}>
+                {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Calculator className="mr-1.5 h-4 w-4" />}
+                Извлечь цены и рассчитать
+              </Button>
+              <p className="mt-1.5 text-xs text-muted-foreground">ИИ извлечёт цены по позициям из КП; затем таблицу можно отредактировать. По Приказу №567 нужно ≥{MIN_SOURCES} источников; коэф. вариации ≤{CV_THRESHOLD}%.</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* История */}
+        {history.length > 0 && (
+          <Card className="p-4 no-print">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">История расчётов</p>
+            <div className="divide-y divide-border">
+              {history.map((h) => (
+                <button key={h.id} onClick={() => open(h.id)} className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm hover:bg-muted/40 rounded px-2">
+                  <span className="truncate">{h.title}</span>
+                  <span className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                    {h.nmck != null && `${fmt(h.nmck)} ₽`} · {fmtDate(h.createdAt)}
+                    {h.status === "processing" && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                    {h.status === "completed" && <FileCheck2 className="h-3.5 w-3.5 text-emerald-500" />}
+                    {h.status === "failed" && <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Расчёт */}
+        {calc && (
+          <Card className="p-6">
+            {calc.status === "processing" && (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> ИИ извлекает цены из коммерческих предложений…</div>
+            )}
+            {calc.status === "failed" && (
+              <div className="flex items-center gap-2 py-6 text-sm text-destructive"><XCircle className="h-4 w-4" /> Не удалось обработать. Попробуйте ещё раз.</div>
+            )}
+            {calc.status === "completed" && (
+              <div id="nmck-report" className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">{calc.title}</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground flex items-center gap-2"><Clock className="h-3.5 w-3.5" /> {fmtDate(calc.createdAt)} · метод сопоставимых рыночных цен</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="no-print" onClick={() => window.print()}><Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF</Button>
+                </div>
+
+                {/* Позиции */}
+                <div className="space-y-3">
+                  {positions.map((p, i) => {
+                    const r = live.rows[i];
+                    return (
+                      <div key={i} className="rounded-lg border border-border p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input value={p.name} onChange={(e) => setField(i, "name", e.target.value)} placeholder="Наименование позиции" className="min-w-[220px] flex-1" />
+                          <Input value={p.unit} onChange={(e) => setField(i, "unit", e.target.value)} placeholder="ед." className="w-20" />
+                          <Input value={String(p.quantity)} onChange={(e) => setField(i, "quantity", e.target.value)} placeholder="кол-во" type="number" className="w-24" />
+                          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPosition(i)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                        <div className="mt-2 space-y-1.5">
+                          {p.prices.map((pr, j) => (
+                            <div key={j} className="flex items-center gap-2">
+                              <Input value={pr.source} onChange={(e) => setPrice(i, j, "source", e.target.value)} placeholder="Источник (КП)" className="h-8 flex-1 text-sm" />
+                              <Input value={String(pr.unitPrice)} onChange={(e) => setPrice(i, j, "unitPrice", e.target.value)} placeholder="цена за ед." type="number" className="h-8 w-32 text-sm" />
+                              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPrice(i, j)}><XCircle className="h-3.5 w-3.5" /></Button>
+                            </div>
+                          ))}
+                          <Button size="sm" variant="ghost" className="h-7 text-xs no-print" onClick={() => addPrice(i)}><Plus className="mr-1 h-3 w-3" />цена</Button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-t border-border pt-2">
+                          <span>Средняя: <b>{fmt(r.avg)} ₽</b></span>
+                          <span className={r.cv > CV_THRESHOLD ? "text-destructive font-medium" : ""}>Коэф. вариации: {fmt(r.cv)}% {r.cv > CV_THRESHOLD ? "⚠ >33%" : r.n >= 2 ? "✓" : ""}</span>
+                          <span>Сумма: <b>{fmt(r.sum)} ₽</b></span>
+                          <span className={r.n > 0 && r.n < MIN_SOURCES ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>источников: {r.n}{r.n > 0 && r.n < MIN_SOURCES ? ` (нужно ≥${MIN_SOURCES})` : ""}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Button size="sm" variant="outline" className="no-print" onClick={addPosition}><Plus className="mr-1 h-3.5 w-3.5" />Добавить позицию</Button>
+                </div>
+
+                {/* Итог */}
+                <div className="rounded-lg bg-primary-soft px-4 py-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-medium">НМЦК (итого):</span>
+                    <span className="text-xl font-bold">{fmt(live.nmck)} ₽</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Макс. коэффициент вариации: {fmt(live.cvMax)}% {live.cvMax > CV_THRESHOLD ? "— превышает 33%, цены неоднородны" : "— в пределах нормы"}.</p>
+                  {fewSources && <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">По части позиций менее {MIN_SOURCES} источников — добавьте КП для соответствия Приказу №567.</p>}
+                </div>
+
+                <div className="flex flex-wrap gap-2 no-print">
+                  <Button size="sm" variant="outline" onClick={save} disabled={saving}>{saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Calculator className="mr-1.5 h-3.5 w-3.5" />}Пересчитать и сохранить</Button>
+                  <Button size="sm" onClick={justify} disabled={justifying}>{justifying ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}Сформировать обоснование (ИИ)</Button>
+                </div>
+
+                {calc.justification && (
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Обоснование НМЦК</p>
+                    <p className="whitespace-pre-line text-sm leading-relaxed">{calc.justification}</p>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-muted-foreground border-t border-border pt-2">⚠ Расчёт носит справочный характер. Проверьте источники цен и итоговую НМЦК перед публикацией закупки.</p>
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+    </AppLayout>
+  );
+}
