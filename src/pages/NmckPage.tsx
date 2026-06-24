@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Upload, FileText, Loader2, Printer, Calculator, Plus, Trash2,
-  AlertTriangle, FileCheck2, XCircle, Sparkles, Clock,
+  AlertTriangle, FileCheck2, XCircle, Sparkles, Clock, Search, ExternalLink, Database,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 
@@ -17,6 +17,11 @@ interface Calc {
   justification?: string | null; sources?: { name: string }[]; createdAt: string;
 }
 interface HistoryItem { id: string; title: string; status: Calc["status"]; nmck: number | null; createdAt: string; }
+interface EisItem {
+  contractNumber: string; customer: string; supplier: string; supplierInn: string;
+  positionName: string; unit: string; quantity: number | null; unitPrice: number;
+  contractPrice: number | null; date: string; url: string;
+}
 
 const CV_THRESHOLD = 33;
 const MIN_SOURCES = 3;
@@ -65,6 +70,14 @@ export default function NmckPage() {
   const [saving, setSaving] = useState(false);
   const [justifying, setJustifying] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  // ЕИС-поиск цен
+  const [eisQuery, setEisQuery] = useState("");
+  const [eisLoading, setEisLoading] = useState(false);
+  const [eisItems, setEisItems] = useState<EisItem[] | null>(null);
+  const [eisSel, setEisSel] = useState<Set<number>>(new Set());
+  const [eisError, setEisError] = useState<string | null>(null);
+  const eisPoll = useRef<number | null>(null);
 
   const loadHistory = async () => {
     try { const { data } = await apiClient.get<HistoryItem[]>("/nmck"); setHistory(data); } catch { /* ignore */ }
@@ -132,6 +145,53 @@ export default function NmckPage() {
     } finally { setJustifying(false); }
   };
 
+  const createEmpty = async () => {
+    setError(null);
+    const form = new FormData();
+    form.append("title", title || "Обоснование НМЦ");
+    try {
+      const { data } = await apiClient.post<Calc>("/nmck", form, { headers: { "Content-Type": "multipart/form-data" } });
+      setTitle("");
+      open(data.id);
+    } catch { setError("Не удалось создать расчёт"); }
+  };
+
+  const eisSearch = async () => {
+    const q = eisQuery.trim();
+    if (q.length < 3) { setEisError("Введите наименование (от 3 символов)"); return; }
+    setEisError(null); setEisLoading(true); setEisItems(null); setEisSel(new Set());
+    if (eisPoll.current) window.clearTimeout(eisPoll.current);
+    try {
+      const { data } = await apiClient.post<{ searchId: string }>("/eis/search", { query: q });
+      const poll = async () => {
+        const { data: r } = await apiClient.get<{ status: string; items?: EisItem[]; error?: string }>(`/eis/search/${data.searchId}`);
+        if (r.status === "processing") { eisPoll.current = window.setTimeout(poll, 1500); return; }
+        setEisLoading(false);
+        if (r.status === "failed") { setEisError(r.error || "Поиск не удался"); return; }
+        setEisItems(r.items ?? []);
+      };
+      poll();
+    } catch (e: unknown) {
+      setEisLoading(false);
+      const err = e as { response?: { data?: { error?: string } } };
+      setEisError(err.response?.data?.error ?? "Не удалось запустить поиск");
+    }
+  };
+
+  const addEisAsPosition = () => {
+    if (!eisItems) return;
+    const chosen = eisItems.filter((_, i) => eisSel.has(i));
+    if (chosen.length === 0) return;
+    const unit = chosen.find((c) => c.unit)?.unit || "";
+    const qty = chosen.find((c) => c.quantity)?.quantity || 1;
+    const prices: Price[] = chosen.map((c) => ({
+      source: `${c.supplier || "Поставщик"} · контракт №${c.contractNumber}`,
+      unitPrice: c.unitPrice,
+    }));
+    upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, prices }]);
+    setEisItems(null); setEisSel(new Set()); setEisQuery("");
+  };
+
   const fmtDate = (s: string) => new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
   const live = compute(positions);
   const fewSources = live.rows.some((r) => r.n > 0 && r.n < MIN_SOURCES);
@@ -168,11 +228,16 @@ export default function NmckPage() {
             </div>
             {error && <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
             <div>
-              <Button onClick={submit} disabled={uploading}>
-                {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Calculator className="mr-1.5 h-4 w-4" />}
-                Извлечь цены и рассчитать
-              </Button>
-              <p className="mt-1.5 text-xs text-muted-foreground">ИИ извлечёт цены по позициям из КП; затем таблицу можно отредактировать. По Приказу №567 нужно ≥{MIN_SOURCES} источников; коэф. вариации ≤{CV_THRESHOLD}%.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={submit} disabled={uploading}>
+                  {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Calculator className="mr-1.5 h-4 w-4" />}
+                  Извлечь цены и рассчитать
+                </Button>
+                <Button variant="outline" onClick={createEmpty} disabled={uploading}>
+                  <Database className="mr-1.5 h-4 w-4" />Создать и искать цены в ЕИС
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">ИИ извлечёт цены из КП, либо создайте пустой расчёт и подберите цены из реестра контрактов ЕИС. По Приказу №567 нужно ≥{MIN_SOURCES} источников; коэф. вариации ≤{CV_THRESHOLD}%.</p>
             </div>
           </div>
         </Card>
@@ -214,6 +279,43 @@ export default function NmckPage() {
                     <p className="mt-0.5 text-xs text-muted-foreground flex items-center gap-2"><Clock className="h-3.5 w-3.5" /> {fmtDate(calc.createdAt)} · метод сопоставимых рыночных цен</p>
                   </div>
                   <Button size="sm" variant="outline" className="no-print" onClick={() => window.print()}><Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF</Button>
+                </div>
+
+                {/* ЕИС: поиск цен в реестре контрактов */}
+                <div className="rounded-lg border border-border p-3 no-print">
+                  <p className="text-sm font-medium flex items-center gap-1.5"><Database className="h-4 w-4 text-primary" /> Подбор цен из ЕИС (реестр контрактов)</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Введите наименование товара — система найдёт прошедшие контракты с поставщиками-победителями и ценами за единицу.</p>
+                  <div className="mt-2 flex gap-2">
+                    <Input value={eisQuery} onChange={(e) => setEisQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="напр. кабель медный" className="max-w-sm" />
+                    <Button size="sm" onClick={eisSearch} disabled={eisLoading}>
+                      {eisLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1.5 h-3.5 w-3.5" />}Найти
+                    </Button>
+                  </div>
+                  {eisError && <p className="mt-1.5 text-xs text-destructive">{eisError}</p>}
+                  {eisLoading && <p className="mt-2 text-xs text-muted-foreground">Ищем в ЕИС (это может занять ~10–30 с)…</p>}
+                  {eisItems && (
+                    eisItems.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground">Контракты с ценами не найдены. Уточните запрос.</p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5">
+                        {eisItems.map((it, i) => (
+                          <label key={i} className="flex cursor-pointer items-start gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted/40">
+                            <input type="checkbox" className="mt-0.5" checked={eisSel.has(i)} onChange={(e) => setEisSel((s) => { const n = new Set(s); e.target.checked ? n.add(i) : n.delete(i); return n; })} />
+                            <span className="min-w-0 flex-1">
+                              <span className="font-medium">{fmt(it.unitPrice)} ₽{it.unit ? `/${it.unit}` : ""}</span>
+                              {" — "}{it.supplier || "поставщик не указан"}{it.supplierInn ? ` (ИНН ${it.supplierInn})` : ""}
+                              <span className="block text-muted-foreground">{it.positionName} · контракт №{it.contractNumber}{it.date ? ` от ${it.date}` : ""}
+                                <a href={it.url} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center text-primary" onClick={(e) => e.stopPropagation()}><ExternalLink className="h-3 w-3" /></a>
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                        <Button size="sm" variant="outline" className="mt-1" disabled={eisSel.size === 0} onClick={addEisAsPosition}>
+                          <Plus className="mr-1 h-3.5 w-3.5" />Добавить выбранные ({eisSel.size}) как позицию
+                        </Button>
+                      </div>
+                    )
+                  )}
                 </div>
 
                 {/* Позиции */}
