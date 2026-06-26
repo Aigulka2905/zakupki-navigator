@@ -1,10 +1,25 @@
-/* Полный отчёт Checko по организации: рендерит все разделы ответа API
-   (реквизиты, ОКВЭД, капитал, руководство, учредители, контакты, регистрация,
-   лицензии, филиалы, связи, банкротство, риск-индикаторы). Все секции
-   опциональны — пустые скрываются. Используется и на экране, и при печати в PDF. */
+/* Полный отчёт Checko по организации.
+   extractCheckoModel() извлекает все разделы в плоскую модель → ею рендерится и
+   экран (CheckoReport), и PDF (printCheckoPdf открывает чистое окно печати, чтобы
+   не зависеть от CSS модалки). Пустые разделы скрываются. */
 import { CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 
 type Any = Record<string, any>;
+type Block =
+  | { title: string; kind: "kv"; rows: { label: string; value: string }[] }
+  | { title: string; kind: "list"; items: string[] }
+  | { title: string; kind: "text"; text: string };
+interface CheckoModel {
+  name: string;
+  shortName: string;
+  statusName: string;
+  active: boolean;
+  ogrn: string;
+  blocks: Block[];
+  risks: { label: string; risk: boolean }[];
+  warnings: string[];
+  asOf: string;
+}
 
 const txt = (v: unknown): string => {
   if (v == null) return "";
@@ -22,62 +37,137 @@ const money = (v: unknown): string => {
 };
 const arr = (v: unknown): Any[] => (Array.isArray(v) ? v : []);
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="border-t border-border pt-3">
-      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      {children}
-    </div>
-  );
-}
-function KV({ label, value }: { label: string; value: React.ReactNode }) {
-  if (value == null || value === "" ) return null;
-  return (
-    <div className="flex gap-3 py-1 text-sm">
-      <dt className="w-52 shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 flex-1 break-words">{value}</dd>
-    </div>
-  );
-}
-
-export function CheckoReport({ data }: { data: Any | null }) {
-  if (!data) return <p className="py-6 text-sm text-muted-foreground">Нет данных.</p>;
-  const d = data;
-
+export function extractCheckoModel(d: Any | null): CheckoModel | null {
+  if (!d) return null;
   const name = txt(d["НаимПолн"]) || txt(d["НаимСокр"]) || txt(d["ФИО"]) || "—";
+  const shortName = txt(d["НаимСокр"]);
   const statusName = typeof d["Статус"] === "object" ? txt(d["Статус"]?.["Наим"]) : txt(d["Статус"]);
   const active = /действ/i.test(statusName);
   const ogrn = txt(d["ОГРН"]) || txt(d["ОГРНИП"]);
   const region = typeof d["Регион"] === "object" ? txt(d["Регион"]?.["Наим"]) : txt(d["Регион"]);
   const address = txt(d["ЮрАдрес"]?.["АдресРФ"]) || txt(d["ЮрАдрес"]?.["Адрес"]) || (typeof d["ЮрАдрес"] === "string" ? txt(d["ЮрАдрес"]) : "");
-  const okved = d["ОКВЭД"] ? [txt(d["ОКВЭД"]["Код"]), txt(d["ОКВЭД"]["Наим"])].filter(Boolean).join(" — ") : "";
-  const okvedDop = arr(d["ОКВЭДДоп"]);
-  const cap = typeof d["УстКап"] === "object" ? money(d["УстКап"]?.["Сумма"]) : money(d["УстКап"]);
-  const ruk = arr(d["Руковод"]);
-  const lic = arr(d["Лиценз"]);
-  const branches = arr(d["Подразд"]?.["Филиал"]);
-  const repr = arr(d["Подразд"]?.["Представ"]);
-  const related = arr(d["СвязУчред"]);
-  const efrsb = arr(d["ЕФРСБ"]);
-  const tm = arr(d["ТоварЗнак"]);
-  const contacts = d["Контакты"] && typeof d["Контакты"] === "object" ? d["Контакты"] : null;
 
-  // Учредители — разные категории
-  const founders: { who: string; share: string }[] = [];
+  const blocks: Block[] = [];
+  const warnings: string[] = [];
+
+  const kv = (title: string, rows: { label: string; value: string }[]) => {
+    const r = rows.filter((x) => x.value);
+    if (r.length) blocks.push({ title, kind: "kv", rows: r });
+  };
+  const list = (title: string, items: string[]) => {
+    const i = items.filter(Boolean);
+    if (i.length) blocks.push({ title, kind: "list", items: i });
+  };
+  const text = (title: string, t: string) => { if (t) blocks.push({ title, kind: "text", text: t }); };
+
+  // Реквизиты
+  kv("Реквизиты", [
+    { label: "ИНН", value: txt(d["ИНН"]) },
+    { label: "КПП", value: txt(d["КПП"]) },
+    { label: "ОГРН", value: ogrn },
+    { label: "ОКПО", value: txt(d["ОКПО"]) },
+    { label: "Дата регистрации", value: date(d["ДатаРег"]) },
+    { label: "Дата присвоения ОГРН", value: date(d["ДатаОГРН"]) },
+    { label: "Дата ликвидации", value: date(d["ДатаЛикв"]) },
+    { label: "Регион", value: region },
+  ]);
+
+  // Адрес
+  if (address) text("Адрес", address);
+  if (d["ЮрАдрес"]?.["Недост"]) warnings.push("Юридический адрес признан недостоверным");
+  const massAddr = arr(d["ЮрАдрес"]?.["МассАдрес"]).length;
+  if (massAddr) warnings.push(`Массовый адрес — ещё ${massAddr} организаций по этому адресу`);
+
+  // Деятельность
+  const okved = d["ОКВЭД"] ? [txt(d["ОКВЭД"]["Код"]), txt(d["ОКВЭД"]["Наим"])].filter(Boolean).join(" — ") : "";
+  kv("Виды деятельности", [
+    { label: "Основной ОКВЭД", value: okved },
+    { label: "Организационно-правовая форма", value: txt(d["ОКОПФ"]?.["Наим"]) },
+    { label: "Форма собственности", value: txt(d["ОКФС"]?.["Наим"]) },
+  ]);
+  list("Дополнительные ОКВЭД", arr(d["ОКВЭДДоп"]).map((o) => [txt(o["Код"]), txt(o["Наим"])].filter(Boolean).join(" — ")));
+
+  // Капитал
+  const cap = typeof d["УстКап"] === "object" ? money(d["УстКап"]?.["Сумма"]) : money(d["УстКап"]);
+  if (cap) text("Уставный капитал", cap);
+
+  // Руководство
+  list("Руководство", arr(d["Руковод"]).map((r) => {
+    const base = [txt(r["ФИО"]), txt(r["НаимДолжн"])].filter(Boolean).join(" — ");
+    const inn = txt(r["ИНН"]) ? ` · ИНН ${txt(r["ИНН"])}` : "";
+    const disq = r["ДисквЛицо"] ? " · ⚠ дисквалификация" : "";
+    return base + inn + disq;
+  }));
+
+  // Учредители
+  const founders: string[] = [];
   const u = d["Учред"];
   if (u && typeof u === "object") {
-    for (const [cat, list] of Object.entries(u)) {
-      for (const f of arr(list)) {
+    for (const [cat, lst] of Object.entries(u)) {
+      for (const f of arr(lst)) {
         const who = txt(f["НаимСокр"]) || txt(f["НаимПолн"]) || txt(f["ФИО"]) || (cat === "РФ" ? "Российская Федерация" : "");
-        const shareP = txt(f["Доля"]?.["Процент"] ?? f["Процент"]);
-        const shareS = money(f["Доля"]?.["Сумма"] ?? f["Сумма"]);
-        const share = [shareP ? `${shareP}%` : "", shareS].filter(Boolean).join(", ");
-        if (who) founders.push({ who, share });
+        const sp = txt(f["Доля"]?.["Процент"] ?? f["Процент"]);
+        const ss = money(f["Доля"]?.["Сумма"] ?? f["Сумма"]);
+        const share = [sp ? `${sp}%` : "", ss].filter(Boolean).join(", ");
+        if (who) founders.push(who + (share ? ` — ${share}` : ""));
       }
     }
   }
+  list("Учредители", founders);
 
-  const RISKS: { key: string; label: string }[] = [
+  // Контакты
+  const c = d["Контакты"];
+  if (c && typeof c === "object") {
+    kv("Контакты", [
+      { label: "Телефон", value: arr(c["Тел"]).map(txt).filter(Boolean).join(", ") },
+      { label: "E-mail", value: arr(c["Емэйл"]).map(txt).filter(Boolean).join(", ") },
+      { label: "Веб-сайт", value: txt(c["ВебСайт"]) },
+    ]);
+  }
+
+  // Численность и налоги
+  kv("Численность и налоги", [
+    { label: "Среднесписочная численность", value: txt(d["СЧР"]) },
+    { label: "Сумма уплаченных налогов", value: money(d["Налоги"]?.["СумУпл"]) },
+    { label: "Недоимка по налогам", value: money(d["Налоги"]?.["СведНедоим"]?.["Сумма"] ?? d["Налоги"]?.["Недоим"]) },
+  ]);
+
+  // Регистрация и учёт
+  kv("Регистрация и учёт", [
+    { label: "Налоговый орган", value: txt(d["ТекФНС"]?.["НаимОрг"]) },
+    { label: "ПФР, рег. номер", value: txt(d["РегПФР"]?.["РегНомер"]) },
+    { label: "ФСС, рег. номер", value: txt(d["РегФСС"]?.["РегНомер"]) },
+  ]);
+
+  // Лицензии
+  list("Лицензии", arr(d["Лиценз"]).slice(0, 30).map((l) => {
+    const head = `№ ${txt(l["Номер"])}`;
+    const term = (txt(l["ДатаНач"]) || txt(l["ДатаОконч"])) ? ` · ${date(l["ДатаНач"])}–${date(l["ДатаОконч"])}` : "";
+    const kinds = arr(l["ВидДеят"]).map((v) => txt(v?.["Наим"] ?? v)).filter(Boolean).join("; ");
+    return head + term + (kinds ? ` · ${kinds}` : "");
+  }));
+
+  // Филиалы и представительства
+  const branches = arr(d["Подразд"]?.["Филиал"]).slice(0, 40).map((b) =>
+    `${txt(b["НаимПолн"]) || "Филиал"}${txt(b["Адрес"]) ? ` — ${txt(b["Адрес"])}` : ""}`);
+  const repr = arr(d["Подразд"]?.["Представ"]).map((b) =>
+    `Представительство${(txt(b["Адрес"]) || txt(b["Страна"])) ? ` — ${txt(b["Адрес"]) || txt(b["Страна"])}` : ""}`);
+  list("Филиалы и представительства", [...branches, ...repr]);
+
+  // Связанные организации
+  list("Связанные организации", arr(d["СвязУчред"]).slice(0, 60).map((r) =>
+    [txt(r["НаимСокр"]) || txt(r["НаимПолн"]), txt(r["ИНН"]) && `ИНН ${txt(r["ИНН"])}`, txt(r["Статус"])].filter(Boolean).join(" · ")));
+
+  // Банкротство
+  list("Банкротство (ЕФРСБ)", arr(d["ЕФРСБ"]).slice(0, 20).map((e) =>
+    [txt(e["Тип"]), date(e["Дата"]), txt(e["Дело"]) && `дело ${txt(e["Дело"])}`].filter(Boolean).join(" · ")));
+
+  // Товарные знаки
+  const tm = arr(d["ТоварЗнак"]).length;
+  if (tm) text("Товарные знаки", String(tm));
+
+  // Риск-индикаторы
+  const riskKeys: { key: string; label: string }[] = [
     { key: "НедобПост", label: "Недобросовестный поставщик (РНП)" },
     { key: "ДисквЛица", label: "Дисквалифицированные лица" },
     { key: "МассРуковод", label: "Массовый руководитель" },
@@ -85,194 +175,137 @@ export function CheckoReport({ data }: { data: Any | null }) {
     { key: "НелегалФин", label: "Нелегальная фин. деятельность" },
     { key: "Санкции", label: "Санкции" },
     { key: "СанкцУчр", label: "Санкции (учредители)" },
-  ].filter((r) => d[r.key] !== undefined && d[r.key] !== null);
+  ];
+  const risks = riskKeys.filter((r) => d[r.key] !== undefined && d[r.key] !== null).map((r) => ({ label: r.label, risk: !!d[r.key] }));
+
+  return { name, shortName, statusName, active, ogrn, blocks, risks, warnings, asOf: date(d["ДатаВып"]) };
+}
+
+// ─────────────────────────── Экранный рендер ───────────────────────────
+export function CheckoReport({ data }: { data: Any | null }) {
+  const m = extractCheckoModel(data);
+  if (!m) return <p className="py-6 text-sm text-muted-foreground">Нет данных.</p>;
 
   return (
     <div className="space-y-4">
-      {/* Заголовок */}
       <div>
         <div className="flex items-start gap-2 flex-wrap">
-          <h2 className="text-lg font-semibold leading-tight">{name}</h2>
-          {statusName && (
-            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"}`}>
-              {active ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}{statusName}
+          <h2 className="text-lg font-semibold leading-tight">{m.name}</h2>
+          {m.statusName && (
+            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${m.active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"}`}>
+              {m.active ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}{m.statusName}
             </span>
           )}
         </div>
-        {txt(d["НаимСокр"]) && txt(d["НаимСокр"]) !== name && <p className="text-sm text-muted-foreground mt-0.5">{txt(d["НаимСокр"])}</p>}
+        {m.shortName && m.shortName !== m.name && <p className="text-sm text-muted-foreground mt-0.5">{m.shortName}</p>}
       </div>
 
-      {/* Реквизиты */}
-      <Section title="Реквизиты">
-        <dl>
-          <KV label="ИНН" value={txt(d["ИНН"])} />
-          <KV label="КПП" value={txt(d["КПП"])} />
-          <KV label="ОГРН" value={ogrn} />
-          <KV label="ОКПО" value={txt(d["ОКПО"])} />
-          <KV label="Дата регистрации" value={date(d["ДатаРег"])} />
-          <KV label="Дата присвоения ОГРН" value={date(d["ДатаОГРН"])} />
-          <KV label="Дата ликвидации" value={date(d["ДатаЛикв"])} />
-          <KV label="Регион" value={region} />
-        </dl>
-      </Section>
-
-      {/* Адрес */}
-      {(address || arr(d["ЮрАдрес"]?.["МассАдрес"]).length > 0) && (
-        <Section title="Адрес">
-          <p className="text-sm">{address || "—"}</p>
-          {d["ЮрАдрес"]?.["Недост"] && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ Адрес признан недостоверным</p>}
-          {arr(d["ЮрАдрес"]?.["МассАдрес"]).length > 0 && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ Массовый адрес — ещё {arr(d["ЮрАдрес"]["МассАдрес"]).length} организаций</p>
-          )}
-        </Section>
+      {m.warnings.length > 0 && (
+        <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 space-y-0.5">
+          {m.warnings.map((w, i) => <div key={i} className="flex gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{w}</div>)}
+        </div>
       )}
 
-      {/* Деятельность */}
-      {(okved || okvedDop.length > 0) && (
-        <Section title="Виды деятельности">
-          <dl>
-            <KV label="Основной ОКВЭД" value={okved} />
-            <KV label="Форма (ОКОПФ)" value={txt(d["ОКОПФ"]?.["Наим"])} />
-            <KV label="Форма собственности" value={txt(d["ОКФС"]?.["Наим"])} />
-          </dl>
-          {okvedDop.length > 0 && (
-            <details className="mt-1">
-              <summary className="cursor-pointer text-xs text-muted-foreground">Дополнительные ОКВЭД ({okvedDop.length})</summary>
-              <ul className="mt-1 space-y-0.5">
-                {okvedDop.map((o, i) => <li key={i} className="text-xs text-muted-foreground">{[txt(o["Код"]), txt(o["Наим"])].filter(Boolean).join(" — ")}</li>)}
-              </ul>
-            </details>
-          )}
-        </Section>
-      )}
-
-      {/* Капитал */}
-      {cap && <Section title="Уставный капитал"><p className="text-sm font-medium">{cap}</p></Section>}
-
-      {/* Руководство */}
-      {ruk.length > 0 && (
-        <Section title="Руководство">
-          {ruk.map((r, i) => (
-            <div key={i} className="py-1 text-sm">
-              <span className="font-medium">{txt(r["ФИО"])}</span>
-              {txt(r["НаимДолжн"]) && <span className="text-muted-foreground"> — {txt(r["НаимДолжн"])}</span>}
-              {txt(r["ИНН"]) && <span className="text-xs text-muted-foreground"> · ИНН {txt(r["ИНН"])}</span>}
-              {r["ДисквЛицо"] && <span className="ml-1 rounded bg-red-500/10 px-1 text-[10px] text-red-600">дисквалификация</span>}
-            </div>
-          ))}
-        </Section>
-      )}
-
-      {/* Учредители */}
-      {founders.length > 0 && (
-        <Section title="Учредители">
-          {founders.map((f, i) => (
-            <div key={i} className="py-1 text-sm"><span className="font-medium">{f.who}</span>{f.share && <span className="text-muted-foreground"> — {f.share}</span>}</div>
-          ))}
-        </Section>
-      )}
-
-      {/* Контакты */}
-      {contacts && (
-        <Section title="Контакты">
-          <dl>
-            <KV label="Телефон" value={arr(contacts["Тел"]).map(txt).filter(Boolean).join(", ")} />
-            <KV label="E-mail" value={arr(contacts["Емэйл"]).map(txt).filter(Boolean).join(", ")} />
-            <KV label="Веб-сайт" value={txt(contacts["ВебСайт"])} />
-          </dl>
-        </Section>
-      )}
-
-      {/* Численность / финансы */}
-      {(txt(d["СЧР"]) || (d["Налоги"] && Object.keys(d["Налоги"]).length > 0)) && (
-        <Section title="Численность и налоги">
-          <dl>
-            <KV label="Среднесписочная численность" value={txt(d["СЧР"])} />
-            <KV label="Сумма уплаченных налогов" value={money(d["Налоги"]?.["СумУпл"])} />
-            <KV label="Недоимка по налогам" value={money(d["Налоги"]?.["СведНедоим"]?.["Сумма"] ?? d["Налоги"]?.["Недоим"])} />
-          </dl>
-        </Section>
-      )}
-
-      {/* Регистрация в фондах */}
-      {(d["РегПФР"] || d["РегФСС"] || d["ТекФНС"]) && (
-        <Section title="Регистрация и учёт">
-          <dl>
-            <KV label="Налоговый орган" value={txt(d["ТекФНС"]?.["НаимОрг"])} />
-            <KV label="ПФР (рег. номер)" value={txt(d["РегПФР"]?.["РегНомер"])} />
-            <KV label="ФСС (рег. номер)" value={txt(d["РегФСС"]?.["РегНомер"])} />
-          </dl>
-        </Section>
-      )}
-
-      {/* Лицензии */}
-      {lic.length > 0 && (
-        <Section title={`Лицензии (${lic.length})`}>
-          {lic.slice(0, 20).map((l, i) => (
-            <div key={i} className="py-1 text-xs">
-              <span className="font-medium">№ {txt(l["Номер"])}</span>
-              {(txt(l["ДатаНач"]) || txt(l["ДатаОконч"])) && <span className="text-muted-foreground"> · {date(l["ДатаНач"])}–{date(l["ДатаОконч"])}</span>}
-              {arr(l["ВидДеят"]).length > 0 && <div className="text-muted-foreground">{arr(l["ВидДеят"]).map((v: any) => txt(v?.["Наим"] ?? v)).filter(Boolean).join("; ").slice(0, 200)}</div>}
-            </div>
-          ))}
-        </Section>
-      )}
-
-      {/* Филиалы */}
-      {(branches.length > 0 || repr.length > 0) && (
-        <Section title="Филиалы и представительства">
-          {branches.slice(0, 30).map((b, i) => (
-            <div key={`b${i}`} className="py-0.5 text-xs"><span className="font-medium">{txt(b["НаимПолн"]) || "Филиал"}</span>{txt(b["Адрес"]) && <span className="text-muted-foreground"> — {txt(b["Адрес"])}</span>}</div>
-          ))}
-          {repr.map((b, i) => (
-            <div key={`r${i}`} className="py-0.5 text-xs"><span className="font-medium">Представительство</span>{(txt(b["Адрес"]) || txt(b["Страна"])) && <span className="text-muted-foreground"> — {txt(b["Адрес"]) || txt(b["Страна"])}</span>}</div>
-          ))}
-        </Section>
-      )}
-
-      {/* Связанные организации */}
-      {related.length > 0 && (
-        <Section title={`Связанные организации (${related.length})`}>
-          <details>
-            <summary className="cursor-pointer text-xs text-muted-foreground">Показать список</summary>
-            <ul className="mt-1 space-y-0.5">
-              {related.slice(0, 50).map((r, i) => (
-                <li key={i} className="text-xs text-muted-foreground">{txt(r["НаимСокр"]) || txt(r["НаимПолн"])} {txt(r["ИНН"]) && `· ИНН ${txt(r["ИНН"])}`} {txt(r["Статус"]) && `· ${txt(r["Статус"])}`}</li>
+      {m.blocks.map((b, i) => (
+        <div key={i} className="border-t border-border pt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{b.title}</p>
+          {b.kind === "kv" && (
+            <dl>
+              {b.rows.map((r) => (
+                <div key={r.label} className="flex gap-3 py-1 text-sm">
+                  <dt className="w-52 shrink-0 text-muted-foreground">{r.label}</dt>
+                  <dd className="min-w-0 flex-1 break-words">{r.value}</dd>
+                </div>
               ))}
+            </dl>
+          )}
+          {b.kind === "text" && <p className="text-sm">{b.text}</p>}
+          {b.kind === "list" && (
+            <ul className="space-y-0.5">
+              {b.items.map((it, j) => <li key={j} className="text-sm text-foreground/90">{it}</li>)}
             </ul>
-          </details>
-        </Section>
-      )}
+          )}
+        </div>
+      ))}
 
-      {/* Банкротство */}
-      {efrsb.length > 0 && (
-        <Section title="Банкротство (ЕФРСБ)">
-          {efrsb.slice(0, 20).map((e, i) => (
-            <div key={i} className="py-0.5 text-xs"><span className="font-medium">{txt(e["Тип"])}</span> · {date(e["Дата"])} {txt(e["Дело"]) && `· дело ${txt(e["Дело"])}`}</div>
-          ))}
-        </Section>
-      )}
-
-      {/* Товарные знаки */}
-      {tm.length > 0 && <Section title="Товарные знаки"><p className="text-sm">{tm.length}</p></Section>}
-
-      {/* Риск-индикаторы */}
-      {RISKS.length > 0 && (
-        <Section title="Риск-индикаторы">
+      {m.risks.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Риск-индикаторы</p>
           <div className="flex flex-wrap gap-2">
-            {RISKS.map((r) => {
-              const risk = !!d[r.key];
-              return (
-                <span key={r.key} className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${risk ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"}`}>
-                  {risk ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}{r.label}: {risk ? "Да" : "Нет"}
-                </span>
-              );
-            })}
+            {m.risks.map((r) => (
+              <span key={r.label} className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${r.risk ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"}`}>
+                {r.risk ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}{r.label}: {r.risk ? "Да" : "Нет"}
+              </span>
+            ))}
           </div>
-        </Section>
+        </div>
       )}
 
-      {txt(d["ДатаВып"]) && <p className="border-t border-border pt-2 text-[11px] text-muted-foreground">Данные Checko на {date(d["ДатаВып"])}. Источник: checko.ru</p>}
+      {m.asOf && <p className="border-t border-border pt-2 text-[11px] text-muted-foreground">Данные Checko на {m.asOf}. Источник: checko.ru</p>}
     </div>
   );
+}
+
+// ─────────────────────────── PDF (окно печати) ───────────────────────────
+const esc = (s: string) =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function modelToHtml(m: CheckoModel): string {
+  const blocks = m.blocks.map((b) => {
+    if (b.kind === "kv") {
+      const rows = b.rows.map((r) => `<div class="kv"><span class="l">${esc(r.label)}</span><span class="v">${esc(r.value)}</span></div>`).join("");
+      return `<section><h3>${esc(b.title)}</h3>${rows}</section>`;
+    }
+    if (b.kind === "text") return `<section><h3>${esc(b.title)}</h3><p>${esc(b.text)}</p></section>`;
+    const items = b.items.map((i) => `<li>${esc(i)}</li>`).join("");
+    return `<section><h3>${esc(b.title)}</h3><ul>${items}</ul></section>`;
+  }).join("");
+
+  const warns = m.warnings.length
+    ? `<div class="warn">${m.warnings.map((w) => `<div>⚠ ${esc(w)}</div>`).join("")}</div>` : "";
+  const risks = m.risks.length
+    ? `<section><h3>Риск-индикаторы</h3><div class="risks">${m.risks.map((r) =>
+        `<span class="risk ${r.risk ? "bad" : "ok"}">${esc(r.label)}: ${r.risk ? "Да" : "Нет"}</span>`).join("")}</div></section>` : "";
+
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>${esc(m.name)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "DejaVu Sans", sans-serif; color: #1a1a2e; margin: 24px; font-size: 12px; line-height: 1.45; }
+  h1 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: #667; margin: 0 0 4px; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .status.ok { background: #d1fae5; color: #065f46; } .status.bad { background: #fee2e2; color: #991b1b; }
+  section { margin-top: 12px; page-break-inside: avoid; }
+  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #667; border-top: 1px solid #e3e6ee; padding-top: 6px; margin: 0 0 4px; }
+  .kv { display: flex; gap: 12px; padding: 2px 0; }
+  .kv .l { width: 220px; color: #667; flex-shrink: 0; } .kv .v { flex: 1; }
+  ul { margin: 0; padding-left: 18px; } li { margin: 1px 0; }
+  .warn { background: #fff7ed; color: #9a3412; border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
+  .risks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .risk { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .risk.ok { background: #d1fae5; color: #065f46; } .risk.bad { background: #fee2e2; color: #991b1b; }
+  .foot { margin-top: 14px; color: #889; font-size: 10px; border-top: 1px solid #e3e6ee; padding-top: 6px; }
+</style></head><body>
+  <h1>${esc(m.name)}</h1>
+  ${m.shortName && m.shortName !== m.name ? `<p class="sub">${esc(m.shortName)}</p>` : ""}
+  ${m.statusName ? `<span class="status ${m.active ? "ok" : "bad"}">${esc(m.statusName)}</span>` : ""}
+  ${warns}
+  ${blocks}
+  ${risks}
+  <div class="foot">Данные Checko${m.asOf ? ` на ${esc(m.asOf)}` : ""}. Источник: checko.ru · Сформировано в ZakupkiAI</div>
+</body></html>`;
+}
+
+export function printCheckoPdf(data: Any | null) {
+  const m = extractCheckoModel(data);
+  if (!m) return;
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) { alert("Разрешите всплывающие окна, чтобы сохранить PDF."); return; }
+  w.document.open();
+  w.document.write(modelToHtml(m));
+  w.document.close();
+  w.focus();
+  // даём окну отрисоваться, затем печать → «Сохранить как PDF»
+  setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 400);
 }

@@ -23,16 +23,7 @@ import {
 } from "lucide-react";
 import { Reveal } from "@/components/Reveal";
 import { apiClient } from "@/lib/api-client";
-import { CheckoReport } from "@/components/CheckoReport";
-
-// Печать только отчёта Checko (для «Скачать PDF» → браузерное «Сохранить как PDF»).
-const CHECKO_PRINT_CSS = `
-@media print {
-  body * { visibility: hidden !important; }
-  #checko-report, #checko-report * { visibility: visible !important; }
-  #checko-report { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; }
-  .no-print { display: none !important; }
-}`;
+import { CheckoReport, printCheckoPdf } from "@/components/CheckoReport";
 
 interface Registry {
   id: string;
@@ -315,7 +306,6 @@ export default function CheckSupplierPage() {
       {/* Checko result modal */}
       <Dialog open={checkoOpen} onOpenChange={setCheckoOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          <style>{CHECKO_PRINT_CSS}</style>
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between gap-2 pr-6">
               <span className="flex items-center gap-2">
@@ -323,7 +313,7 @@ export default function CheckSupplierPage() {
                 Checko — сведения об организации
               </span>
               {!checkoLoading && !checkoError && checkoData && (
-                <Button size="sm" variant="outline" className="no-print text-xs" onClick={() => window.print()}>
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => printCheckoPdf(checkoData)}>
                   <Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF
                 </Button>
               )}
