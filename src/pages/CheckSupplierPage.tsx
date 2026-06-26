@@ -19,9 +19,20 @@ import {
   Users,
   Sparkles,
   Loader2,
+  Printer,
 } from "lucide-react";
 import { Reveal } from "@/components/Reveal";
 import { apiClient } from "@/lib/api-client";
+import { CheckoReport } from "@/components/CheckoReport";
+
+// Печать только отчёта Checko (для «Скачать PDF» → браузерное «Сохранить как PDF»).
+const CHECKO_PRINT_CSS = `
+@media print {
+  body * { visibility: hidden !important; }
+  #checko-report, #checko-report * { visibility: visible !important; }
+  #checko-report { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; }
+  .no-print { display: none !important; }
+}`;
 
 interface Registry {
   id: string;
@@ -141,54 +152,6 @@ const REGISTRIES: Registry[] = [
     buildUrl: (inn) => `https://www.fedstat.ru/indicators/search?searchText=${inn}`,
   },
 ];
-
-// Бэкенд отдаёт сырой ответ Checko; набор полей зависит от тарифа/типа лица,
-// поэтому извлекаем по-защитному и пропускаем пустые значения.
-function asText(v: unknown): string {
-  if (v == null) return "";
-  if (typeof v === "string" || typeof v === "number") return String(v);
-  return "";
-}
-
-function extractChecko(d: Record<string, any> | null) {
-  if (!d) return null;
-  const name     = asText(d["НаимСокр"]) || asText(d["НаимПолн"]) || asText(d["ФИО"]) || "—";
-  const fullName = asText(d["НаимПолн"]) || asText(d["ФИО"]) || "";
-  const status   = typeof d["Статус"] === "string" ? d["Статус"] : asText(d["Статус"]?.["Наим"]);
-  const ogrn     = asText(d["ОГРН"]) || asText(d["ОГРНИП"]);
-
-  const ruk = Array.isArray(d["Руковод"]) ? d["Руковод"][0] : d["Руковод"];
-  const director = ruk
-    ? [asText(ruk["ФИО"]), asText(ruk["НаимДолжн"]) || asText(ruk["Должн"])].filter(Boolean).join(" — ")
-    : "";
-
-  const address =
-    asText(d["ЮрАдрес"]?.["АдресРФ"]) ||
-    asText(d["ЮрАдрес"]?.["Адрес"]) ||
-    (typeof d["ЮрАдрес"] === "string" ? d["ЮрАдрес"] : "");
-
-  const okved = d["ОснВидДеят"]
-    ? [asText(d["ОснВидДеят"]["Код"]), asText(d["ОснВидДеят"]["Наим"])].filter(Boolean).join(" ")
-    : "";
-
-  const capitalRaw = typeof d["УстКап"] === "object" ? asText(d["УстКап"]?.["Сумма"]) : asText(d["УстКап"]);
-  const capitalNum = Number(capitalRaw);
-  const capital = capitalRaw ? (isNaN(capitalNum) ? capitalRaw : `${capitalNum.toLocaleString("ru-RU")} ₽`) : "";
-
-  const rows = [
-    { label: "ИНН", value: asText(d["ИНН"]) },
-    { label: "ОГРН", value: ogrn },
-    { label: "КПП", value: asText(d["КПП"]) },
-    { label: "Дата регистрации", value: asText(d["ДатаРег"]) },
-    { label: "Руководитель", value: director },
-    { label: "Адрес", value: address },
-    { label: "Осн. вид деятельности", value: okved },
-    { label: "Уставный капитал", value: capital },
-    { label: "Среднесписочная численность", value: asText(d["СЧР"]) },
-  ].filter((r) => r.value);
-
-  return { name, fullName, status, ogrn, rows };
-}
 
 export default function CheckSupplierPage() {
   const [inn, setInn]           = useState("");
@@ -351,11 +314,19 @@ export default function CheckSupplierPage() {
 
       {/* Checko result modal */}
       <Dialog open={checkoOpen} onOpenChange={setCheckoOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <style>{CHECKO_PRINT_CSS}</style>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-violet-500" />
-              Checko — проверка контрагента
+            <DialogTitle className="flex items-center justify-between gap-2 pr-6">
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-violet-500" />
+                Checko — сведения об организации
+              </span>
+              {!checkoLoading && !checkoError && checkoData && (
+                <Button size="sm" variant="outline" className="no-print text-xs" onClick={() => window.print()}>
+                  <Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF
+                </Button>
+              )}
             </DialogTitle>
           </DialogHeader>
 
@@ -369,54 +340,28 @@ export default function CheckSupplierPage() {
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{checkoError}</span>
             </div>
-          ) : (() => {
-            const c = extractChecko(checkoData);
-            if (!c) return <p className="py-6 text-sm text-muted-foreground">Нет данных.</p>;
-            return (
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-base">{c.name}</span>
-                    {c.status && (
-                      <Badge variant="outline" className="text-[10px]">{c.status}</Badge>
-                    )}
-                  </div>
-                  {c.fullName && c.fullName !== c.name && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{c.fullName}</p>
-                  )}
-                </div>
-
-                <dl className="divide-y divide-border rounded-lg border border-border">
-                  {c.rows.map((r) => (
-                    <div key={r.label} className="flex gap-3 px-3 py-2 text-sm">
-                      <dt className="w-44 shrink-0 text-muted-foreground">{r.label}</dt>
-                      <dd className="min-w-0 flex-1 break-words">{r.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  {c.ogrn ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs"
-                      onClick={() => window.open(`https://checko.ru/company/${c.ogrn}`, "_blank")}
-                    >
-                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                      Открыть на checko.ru
+          ) : (
+            <div id="checko-report">
+              <CheckoReport data={checkoData} />
+              <div className="mt-4 flex items-center justify-between gap-2 no-print">
+                {(() => {
+                  const ogrn = String((checkoData?.["ОГРН"] ?? checkoData?.["ОГРНИП"] ?? "")) || "";
+                  return ogrn ? (
+                    <Button size="sm" variant="outline" className="text-xs"
+                      onClick={() => window.open(`https://checko.ru/company/${ogrn}`, "_blank")}>
+                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Открыть на checko.ru
                     </Button>
-                  ) : <span />}
-                  <details className="text-xs text-muted-foreground">
-                    <summary className="cursor-pointer select-none">Полный ответ (JSON)</summary>
-                    <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted/50 p-2 text-[11px] leading-relaxed">
-                      {JSON.stringify(checkoData, null, 2)}
-                    </pre>
-                  </details>
-                </div>
+                  ) : <span />;
+                })()}
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none">Полный ответ (JSON)</summary>
+                  <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted/50 p-2 text-[11px] leading-relaxed">
+                    {JSON.stringify(checkoData, null, 2)}
+                  </pre>
+                </details>
               </div>
-            );
-          })()}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>
