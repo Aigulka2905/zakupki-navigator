@@ -162,6 +162,24 @@ export function extractCheckoModel(d: Any | null): CheckoModel | null {
   list("Банкротство (ЕФРСБ)", arr(d["ЕФРСБ"]).slice(0, 20).map((e) =>
     [txt(e["Тип"]), date(e["Дата"]), txt(e["Дело"]) && `дело ${txt(e["Дело"])}`].filter(Boolean).join(" · ")));
 
+  // Арбитражные дела (Checko /legal-cases)
+  const lc = d["АрбитражДела"];
+  if (lc && typeof lc === "object") {
+    kv("Арбитражные дела", [
+      { label: "Всего дел", value: txt(lc["ЗапВсего"]) },
+      { label: "Общая сумма исков", value: money(lc["ОбщСуммИск"]) },
+    ]);
+    const myInn = txt(d["ИНН"]);
+    const cases = arr(lc["Записи"]).slice(0, 15).map((cse) => {
+      const role = arr(cse["Ответ"]).some((x) => txt(x?.["ИНН"]) === myInn) ? "ответчик"
+        : arr(cse["Ист"]).some((x) => txt(x?.["ИНН"]) === myInn) ? "истец" : "";
+      const s = Number(cse["СуммИск"]);
+      const sum = Number.isFinite(s) && s > 0 ? money(s) : "";
+      return [txt(cse["Номер"]), date(cse["Дата"]), txt(cse["Суд"]), role, sum].filter(Boolean).join(" · ");
+    });
+    list("Последние арбитражные дела", cases);
+  }
+
   // Товарные знаки
   const tm = arr(d["ТоварЗнак"]).length;
   if (tm) text("Товарные знаки", String(tm));
