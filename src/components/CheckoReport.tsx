@@ -264,10 +264,12 @@ export function CheckoReport({ data }: { data: Any | null }) {
   );
 }
 
-// ─────────────────────────── PDF (окно печати) ───────────────────────────
+// ───────────────── PDF (прямое скачивание файла через html2pdf) ─────────────────
 const esc = (s: string) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+// Самодостаточный HTML отчёта со scoped-CSS и hex-цветами (без oklch Tailwind —
+// иначе html2canvas падает). Возвращает innerHTML для контейнера .checko-pdf.
 function modelToHtml(m: CheckoModel): string {
   const blocks = m.blocks.map((b) => {
     if (b.kind === "kv") {
@@ -285,45 +287,55 @@ function modelToHtml(m: CheckoModel): string {
     ? `<section><h3>Риск-индикаторы</h3><div class="risks">${m.risks.map((r) =>
         `<span class="risk ${r.risk ? "bad" : "ok"}">${esc(r.label)}: ${r.risk ? "Да" : "Нет"}</span>`).join("")}</div></section>` : "";
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<title>${esc(m.name)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: Arial, "DejaVu Sans", sans-serif; color: #1a1a2e; margin: 24px; font-size: 12px; line-height: 1.45; }
-  h1 { font-size: 16px; margin: 0 0 2px; }
-  .sub { color: #667; margin: 0 0 4px; }
-  .status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-  .status.ok { background: #d1fae5; color: #065f46; } .status.bad { background: #fee2e2; color: #991b1b; }
-  section { margin-top: 12px; page-break-inside: avoid; }
-  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #667; border-top: 1px solid #e3e6ee; padding-top: 6px; margin: 0 0 4px; }
-  .kv { display: flex; gap: 12px; padding: 2px 0; }
-  .kv .l { width: 220px; color: #667; flex-shrink: 0; } .kv .v { flex: 1; }
-  ul { margin: 0; padding-left: 18px; } li { margin: 1px 0; }
-  .warn { background: #fff7ed; color: #9a3412; border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
-  .risks { display: flex; flex-wrap: wrap; gap: 6px; }
-  .risk { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-  .risk.ok { background: #d1fae5; color: #065f46; } .risk.bad { background: #fee2e2; color: #991b1b; }
-  .foot { margin-top: 14px; color: #889; font-size: 10px; border-top: 1px solid #e3e6ee; padding-top: 6px; }
-</style></head><body>
-  <h1>${esc(m.name)}</h1>
-  ${m.shortName && m.shortName !== m.name ? `<p class="sub">${esc(m.shortName)}</p>` : ""}
-  ${m.statusName ? `<span class="status ${m.active ? "ok" : "bad"}">${esc(m.statusName)}</span>` : ""}
-  ${warns}
-  ${blocks}
-  ${risks}
-  <div class="foot">Данные Checko${m.asOf ? ` на ${esc(m.asOf)}` : ""}. Источник: checko.ru · Сформировано в ZakupkiAI</div>
-</body></html>`;
+  const css = `
+    .checko-pdf { font-family: Arial, "DejaVu Sans", sans-serif; color: #1a1a2e; font-size: 12px; line-height: 1.45; background: #fff; }
+    .checko-pdf h1 { font-size: 16px; margin: 0 0 2px; }
+    .checko-pdf .sub { color: #667; margin: 0 0 4px; }
+    .checko-pdf .status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .checko-pdf .status.ok { background: #d1fae5; color: #065f46; } .checko-pdf .status.bad { background: #fee2e2; color: #991b1b; }
+    .checko-pdf section { margin-top: 12px; page-break-inside: avoid; }
+    .checko-pdf h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #667; border-top: 1px solid #e3e6ee; padding-top: 6px; margin: 0 0 4px; }
+    .checko-pdf .kv { display: flex; gap: 12px; padding: 2px 0; }
+    .checko-pdf .kv .l { width: 220px; color: #667; flex-shrink: 0; } .checko-pdf .kv .v { flex: 1; }
+    .checko-pdf ul { margin: 0; padding-left: 18px; } .checko-pdf li { margin: 1px 0; }
+    .checko-pdf .warn { background: #fff7ed; color: #9a3412; border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
+    .checko-pdf .risks { display: flex; flex-wrap: wrap; gap: 6px; }
+    .checko-pdf .risk { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .checko-pdf .risk.ok { background: #d1fae5; color: #065f46; } .checko-pdf .risk.bad { background: #fee2e2; color: #991b1b; }
+    .checko-pdf .foot { margin-top: 14px; color: #889; font-size: 10px; border-top: 1px solid #e3e6ee; padding-top: 6px; }
+  `;
+  return `<style>${css}</style>
+    <h1>${esc(m.name)}</h1>
+    ${m.shortName && m.shortName !== m.name ? `<p class="sub">${esc(m.shortName)}</p>` : ""}
+    ${m.statusName ? `<span class="status ${m.active ? "ok" : "bad"}">${esc(m.statusName)}</span>` : ""}
+    ${warns}${blocks}${risks}
+    <div class="foot">Данные Checko${m.asOf ? ` на ${esc(m.asOf)}` : ""}. Источник: checko.ru · Сформировано в ZakupkiAI</div>`;
 }
 
-export function printCheckoPdf(data: Any | null) {
+const safeFileName = (s: string) => s.replace(/["«»]/g, "").replace(/[^\wа-яёА-ЯЁ\d.-]+/g, "_").slice(0, 80) || "checko";
+
+// Генерирует PDF на клиенте и СКАЧИВАЕТ его (без диалога печати).
+export async function downloadCheckoPdf(data: Any | null) {
   const m = extractCheckoModel(data);
   if (!m) return;
-  const w = window.open("", "_blank", "width=900,height=1000");
-  if (!w) { alert("Разрешите всплывающие окна, чтобы сохранить PDF."); return; }
-  w.document.open();
-  w.document.write(modelToHtml(m));
-  w.document.close();
-  w.focus();
-  // даём окну отрисоваться, затем печать → «Сохранить как PDF»
-  setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 400);
+
+  const container = document.createElement("div");
+  container.className = "checko-pdf";
+  container.style.cssText = "position:fixed;left:-10000px;top:0;width:760px;padding:24px;background:#ffffff;";
+  container.innerHTML = modelToHtml(m);
+  document.body.appendChild(container);
+
+  try {
+    const html2pdf = (await import("html2pdf.js")).default;
+    await html2pdf().set({
+      margin: [10, 10, 12, 10],
+      filename: `Checko_${safeFileName(m.shortName || m.name)}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: 800 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    }).from(container).save();
+  } finally {
+    document.body.removeChild(container);
+  }
 }

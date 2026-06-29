@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { Reveal } from "@/components/Reveal";
 import { apiClient } from "@/lib/api-client";
-import { CheckoReport, printCheckoPdf } from "@/components/CheckoReport";
+import { CheckoReport, downloadCheckoPdf } from "@/components/CheckoReport";
 
 interface Registry {
   id: string;
@@ -313,7 +313,7 @@ export default function CheckSupplierPage() {
                 Checko — сведения об организации
               </span>
               {!checkoLoading && !checkoError && checkoData && (
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => printCheckoPdf(checkoData)}>
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => downloadCheckoPdf(checkoData)}>
                   <Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF
                 </Button>
               )}
