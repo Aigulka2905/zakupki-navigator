@@ -133,6 +133,33 @@ export function extractCheckoModel(d: Any | null): CheckoModel | null {
     { label: "Недоимка по налогам", value: money(d["Налоги"]?.["СведНедоим"]?.["Сумма"] ?? d["Налоги"]?.["Недоим"]) },
   ]);
 
+  // Финансовая отчётность по годам (Checko /finances) — коды РСБУ:
+  // 2110 выручка, 2400 чистая прибыль, 1600 активы, 1300 капитал.
+  const fin = d["Финансы"];
+  if (fin && typeof fin === "object") {
+    const fmt = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? `${n.toLocaleString("ru-RU")} ₽` : ""; };
+    const years = Object.keys(fin).filter((y) => /^\d{4}$/.test(y)).sort().reverse().slice(0, 6);
+    // Последний год — отдельной сводкой
+    const ly = years[0];
+    if (ly) {
+      const f = fin[ly] || {};
+      kv(`Финансы за ${ly} год`, [
+        { label: "Выручка", value: fmt(f["2110"]) },
+        { label: "Чистая прибыль", value: fmt(f["2400"]) },
+        { label: "Активы (баланс)", value: fmt(f["1600"]) },
+        { label: "Капитал и резервы", value: fmt(f["1300"]) },
+      ]);
+    }
+    const lines = years.map((y) => {
+      const f = fin[y] || {};
+      const parts: string[] = [];
+      if (f["2110"] != null) parts.push(`выручка ${fmt(f["2110"])}`);
+      if (f["2400"] != null) parts.push(`чистая прибыль ${fmt(f["2400"])}`);
+      return parts.length ? `${y}: ${parts.join(", ")}` : "";
+    });
+    list("Финансовые показатели по годам", lines);
+  }
+
   // Регистрация и учёт
   kv("Регистрация и учёт", [
     { label: "Налоговый орган", value: txt(d["ТекФНС"]?.["НаимОрг"]) },
