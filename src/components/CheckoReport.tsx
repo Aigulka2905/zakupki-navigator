@@ -321,9 +321,14 @@ export async function downloadCheckoPdf(data: Any | null) {
 
   const container = document.createElement("div");
   container.className = "checko-pdf";
-  container.style.cssText = "position:fixed;left:-10000px;top:0;width:760px;padding:24px;background:#ffffff;";
+  // В пределах вьюпорта, но позади приложения (z-index:-1): far-offscreen элемент
+  // html2canvas захватывает как пустую страницу.
+  container.style.cssText = "position:fixed;left:0;top:0;width:760px;padding:24px;background:#ffffff;z-index:-1;";
   container.innerHTML = modelToHtml(m);
   document.body.appendChild(container);
+
+  // даём браузеру разложить и отрисовать содержимое перед захватом
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
 
   try {
     const html2pdf = (await import("html2pdf.js")).default;
@@ -331,7 +336,7 @@ export async function downloadCheckoPdf(data: Any | null) {
       margin: [10, 10, 12, 10],
       filename: `Checko_${safeFileName(m.shortName || m.name)}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: 800 },
+      html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true, scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     }).from(container).save();
