@@ -35,14 +35,17 @@ interface NavItem {
   icon: React.ElementType;
 }
 
-// ── Secondary nav (same for all roles) ───────────────────────
+// ── Secondary nav ─────────────────────────────────────────────
+// Заказчики пользуются сервисом бесплатно — вкладка «Биллинг» им не нужна.
 
-const secondaryItems: NavItem[] = [
-  { title: "Инструкции",     url: "/instructions", icon: BookMarked },
-  { title: "Биллинг",        url: "/billing",       icon: CreditCard },
-  { title: "История",        url: "/history",       icon: History },
-  { title: "Настройки",      url: "/settings",      icon: Settings },
-];
+function getSecondaryItems(isCustomer: boolean): NavItem[] {
+  return [
+    { title: "Инструкции",     url: "/instructions", icon: BookMarked },
+    ...(isCustomer ? [] : [{ title: "Биллинг", url: "/billing", icon: CreditCard }]),
+    { title: "История",        url: "/history",       icon: History },
+    { title: "Настройки",      url: "/settings",      icon: Settings },
+  ];
+}
 
 // ── NavItem component ─────────────────────────────────────────
 
@@ -153,9 +156,9 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Оценка заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
-        { title: "Профиль организации", url: "/organization",           icon: Building2 },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
         { title: "Национальный режим",  url: "/national-regime",        icon: Flag },
+        { title: "Профиль организации", url: "/organization",           icon: Building2 },
       ]
     : [
         { title: "Главная",              url: "/",               icon: LayoutDashboard },
@@ -190,7 +193,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <aside
       style={{ width: collapsed ? 68 : 260 }}
       className={cn(
-        "relative flex h-screen shrink-0 flex-col overflow-hidden",
+        "sticky top-0 relative flex h-screen shrink-0 flex-col overflow-hidden",
         "border-r border-sidebar-border bg-sidebar",
         "transition-[width] duration-300 ease-in-out",
         // Dark glass tint
@@ -263,7 +266,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         <div className="px-2 space-y-0.5">
           <SectionLabel label="Сервис" collapsed={collapsed} />
 
-          {secondaryItems.map((item) => (
+          {getSecondaryItems(isCustomer).map((item) => (
             <SideNavItem
               key={item.url}
               item={item}
