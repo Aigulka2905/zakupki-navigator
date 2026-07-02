@@ -209,8 +209,8 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       >
         {/* Logo mark — always visible */}
         <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-lg shadow-indigo-500/20 ring-1 ring-black/5">
-            <img src="/logo-icon.png" alt="Закупки AI" className="h-7 w-7 object-contain" />
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-lg shadow-indigo-500/20 ring-1 ring-black/5">
+            <img src="/logo-icon.png" alt="Закупки AI" className="h-9 w-9 object-contain" />
             {/* Glow dot */}
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-sidebar bg-emerald-400" />
           </div>
