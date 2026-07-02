@@ -12,7 +12,6 @@ import {
   BookMarked,
   LogOut,
   UserSearch,
-  Zap,
   ChevronLeft,
   ChevronRight,
   Bell,
@@ -210,8 +209,8 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       >
         {/* Logo mark — always visible */}
         <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/30">
-            <Zap className="h-4 w-4 text-white" />
+          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-lg shadow-indigo-500/20 ring-1 ring-black/5">
+            <img src="/logo-icon.png" alt="Закупки AI" className="h-7 w-7 object-contain" />
             {/* Glow dot */}
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-sidebar bg-emerald-400" />
           </div>
@@ -224,7 +223,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
             )}
           >
             <div className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-sm font-bold leading-tight text-transparent">
-              ZakupkiAI
+              Закупки AI
             </div>
             <div className="text-[10px] leading-tight text-muted-foreground/60">
               223-ФЗ Ассистент
