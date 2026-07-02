@@ -22,19 +22,30 @@ import {
   Lock,
   RefreshCw,
   Star,
+  ClipboardCheck,
+  Calculator,
+  UserSearch,
+  Printer,
+  Users,
+  Scale,
 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 // ── Types ─────────────────────────────────────────────────────
+
+type Audience = "customer" | "participant";
 
 interface Topic {
   id: string;
   icon: React.ElementType;
   label: string;
   badge?: string;
+  /** Кому показывать тему. Не задано → обеим ролям. */
+  audience?: Audience;
   sections: Section[];
 }
 
@@ -501,9 +512,178 @@ const TOPICS: Topic[] = [
   },
 
   {
+    id: "bid-evaluation",
+    icon: ClipboardCheck,
+    label: "Оценка заявок",
+    badge: "NEW",
+    sections: [
+      {
+        title: "Что делает",
+        content: (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Инструмент сверяет заявки участников с документацией закупки (ТЗ) и по каждому участнику
+              выдаёт вердикт (соответствует / частично / не соответствует), оценку 0–100, рекомендацию
+              и списки сильных сторон и несоответствий — со <strong>ссылками на конкретные пункты</strong>
+              {" "}документа. Итог сводится в таблицу с экспортом в PDF.
+            </p>
+            <FeatureGrid items={[
+              { icon: Users, title: "По участникам", desc: "Один участник = комплект документов (анкета, ТКП…), оценивается целиком" },
+              { icon: FileSearch, title: "Позиционная сверка", desc: "Проверка по позициям спецификации: марка, ГОСТ, кол-во, цена, срок" },
+              { icon: Scale, title: "Ссылки на пункты", desc: "Каждое нарушение привязано к пункту ТЗ/заявки" },
+              { icon: Printer, title: "PDF-отчёт", desc: "Сводная таблица + детали одним файлом" },
+            ]} />
+          </div>
+        ),
+      },
+      {
+        title: "Как запустить оценку",
+        content: (
+          <Steps>
+            <Step n={1} title="Откройте «Оценка заявок» и укажите название закупки">
+              Например «Поставка офисной бумаги А4».
+            </Step>
+            <Step n={2} title="Загрузите документацию закупки (ТЗ)">
+              Можно несколько файлов — их текст объединяется. Поддержка: PDF, DOCX, XLSX, TXT.
+            </Step>
+            <Step n={3} title="Добавьте участников и их документы">
+              Для каждого участника укажите название организации и прикрепите его комплект
+              (анкета + ТКП и т.д.). Кнопка «Добавить участника» — для следующего.
+            </Step>
+            <Step n={4} title="Нажмите «Проанализировать заявки»">
+              Через несколько секунд появится сводная таблица и детали по каждому участнику.
+            </Step>
+            <Step n={5} title="Скачайте PDF">
+              Кнопка «Скачать PDF» формирует отчёт со всеми вердиктами и ссылками на пункты.
+            </Step>
+          </Steps>
+        ),
+      },
+      {
+        title: "Советы",
+        content: (
+          <div className="space-y-3">
+            <Note>Имя участника берётся из имени файла, если вы не указали его вручную.</Note>
+            <Tip>Если у участника несколько файлов — добавляйте их все в его блок: ИИ оценит участника по всему комплекту, а не по каждому файлу отдельно.</Tip>
+            <Warning>Оценка сформирована ИИ и носит рекомендательный характер. Окончательное решение принимает заказчик.</Warning>
+          </div>
+        ),
+      },
+    ],
+  },
+
+  {
+    id: "nmck",
+    icon: Calculator,
+    label: "Обоснование НМЦ",
+    badge: "NEW",
+    sections: [
+      {
+        title: "Что делает",
+        content: (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Расчёт начальной (максимальной) цены контракта методом сопоставимых рыночных цен
+              (анализ рынка). Вы задаёте позиции и ценовые источники, система считает НМЦК,
+              коэффициент вариации и формирует готовый текст обоснования.
+            </p>
+            <FeatureGrid items={[
+              { icon: Calculator, title: "Автоматический расчёт", desc: "Средняя цена, НМЦК, коэффициент вариации (CV)" },
+              { icon: Briefcase, title: "Цены из ЕИС", desc: "Поиск прошедших контрактов реестра по наименованию — цены победивших поставщиков" },
+              { icon: Printer, title: "Готовое обоснование", desc: "Текст обоснования + экспорт" },
+            ]} />
+          </div>
+        ),
+      },
+      {
+        title: "Как посчитать НМЦК",
+        content: (
+          <Steps>
+            <Step n={1} title="Добавьте позиции закупки">
+              Наименование, единица измерения, количество.
+            </Step>
+            <Step n={2} title="Добавьте ценовые источники">
+              Введите цены вручную (из коммерческих предложений) или нажмите «Найти в ЕИС» —
+              укажите наименование позиции, система покажет прошедшие контракты с этим товаром
+              и ценами победивших поставщиков; отметьте нужные.
+            </Step>
+            <Step n={3} title="Получите расчёт">
+              Система посчитает среднюю цену, НМЦК и коэффициент вариации по каждой позиции.
+            </Step>
+            <Step n={4} title="Сформируйте обоснование и сохраните">
+              Кнопка генерации текста обоснования; расчёт сохраняется в истории.
+            </Step>
+          </Steps>
+        ),
+      },
+      {
+        title: "На что обратить внимание",
+        content: (
+          <div className="space-y-3">
+            <Note>Коэффициент вариации (CV) выше 33% означает большой разброс цен — источники стоит перепроверить.</Note>
+            <Tip>Чем больше сопоставимых ценовых источников (рекомендуется не менее трёх), тем обоснованнее НМЦК.</Tip>
+          </div>
+        ),
+      },
+    ],
+  },
+
+  {
+    id: "check-supplier",
+    icon: UserSearch,
+    label: "Проверка контрагента",
+    badge: "NEW",
+    sections: [
+      {
+        title: "Что показывает",
+        content: (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              По ИНН формируется комплексный отчёт об организации (через сервис Checko), а также
+              даются прямые ссылки на государственные реестры.
+            </p>
+            <FeatureGrid items={[
+              { icon: Building2, title: "Реквизиты и статус", desc: "ИНН/ОГРН/КПП, адрес, руководитель, учредители, ОКВЭД, капитал" },
+              { icon: Calculator, title: "Финансы по годам", desc: "Выручка, чистая прибыль, активы, капитал" },
+              { icon: Scale, title: "Арбитраж и банкротство", desc: "Число дел, сумма исков, последние дела; сведения ЕФРСБ" },
+              { icon: AlertTriangle, title: "Риск-индикаторы", desc: "РНП, дисквалификация, массовость, санкции" },
+            ]} />
+          </div>
+        ),
+      },
+      {
+        title: "Как проверить",
+        content: (
+          <Steps>
+            <Step n={1} title="Откройте «Проверка контрагента» и введите ИНН">
+              10 цифр (юрлицо) или 12 (ИП).
+            </Step>
+            <Step n={2} title="Нажмите «Проверить через Checko»">
+              Отчёт со всеми разделами откроется в окне.
+            </Step>
+            <Step n={3} title="Скачайте PDF (при необходимости)">
+              Кнопка «Скачать PDF» сохраняет все сведения об организации одним файлом.
+            </Step>
+            <Step n={4} title="Или перейдите в конкретный госреестр">
+              Плитки внизу — прямые ссылки (ЕГРЮЛ, РНП, ФССП, налоговые долги, госконтракты и др.).
+            </Step>
+          </Steps>
+        ),
+      },
+      {
+        title: "Важно",
+        content: (
+          <Warning>Данные предоставляются справочно. Проверяйте ключевые сведения по первоисточникам (ЕГРЮЛ, реестры ФНС) перед принятием решений.</Warning>
+        ),
+      },
+    ],
+  },
+
+  {
     id: "billing",
     icon: CreditCard,
     label: "Биллинг и оплата",
+    audience: "participant",
     sections: [
       {
         title: "Модели оплаты",
@@ -803,21 +983,41 @@ const TOPICS: Topic[] = [
 // ── Main Page ─────────────────────────────────────────────────
 
 const InstructionsPage = () => {
+  const { data: currentUser } = useCurrentUser();
   const [activeId, setActiveId] = useState("start");
   const [search, setSearch] = useState("");
+  const [role, setRole] = useState<Audience>("participant");
+  const [roleTouched, setRoleTouched] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // Автовыбор роли по типу организации (пока пользователь не переключил вручную).
+  useEffect(() => {
+    if (!roleTouched && currentUser?.organization?.orgType) {
+      setRole(currentUser.organization.orgType === "customer" ? "customer" : "participant");
+    }
+  }, [currentUser, roleTouched]);
+
+  // Темы для выбранной роли (без audience → показываем обеим).
+  const byAudience = TOPICS.filter((t) => !t.audience || t.audience === role);
+
   const filteredTopics = search.trim()
-    ? TOPICS.filter(
+    ? byAudience.filter(
         (t) =>
           t.label.toLowerCase().includes(search.toLowerCase()) ||
           t.sections.some((s) =>
             s.title.toLowerCase().includes(search.toLowerCase())
           )
       )
-    : TOPICS;
+    : byAudience;
 
-  const activeTopic = TOPICS.find((t) => t.id === activeId) ?? TOPICS[0];
+  const activeTopic = byAudience.find((t) => t.id === activeId) ?? byAudience[0];
+
+  // Если после смены роли активная тема скрыта — переключаемся на первую доступную.
+  useEffect(() => {
+    if (!byAudience.some((t) => t.id === activeId)) {
+      setActiveId(byAudience[0]?.id ?? "start");
+    }
+  }, [role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -832,6 +1032,26 @@ const InstructionsPage = () => {
 
         {/* ── Left sidebar ─────────────────────────────────── */}
         <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-muted/20">
+          {/* Role switch */}
+          <div className="border-b border-border p-3">
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-0.5">
+              {([
+                { key: "customer" as Audience, label: "Заказчик" },
+                { key: "participant" as Audience, label: "Поставщик" },
+              ]).map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => { setRole(r.key); setRoleTouched(true); setSearch(""); }}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-all ${
+                    role === r.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Search */}
           <div className="border-b border-border p-3">
             <div className="relative">
@@ -917,9 +1137,9 @@ const InstructionsPage = () => {
             {/* Navigation between topics */}
             <div className="border-t border-border pt-6 flex justify-between gap-3">
               {(() => {
-                const idx = TOPICS.findIndex((t) => t.id === activeId);
-                const prev = TOPICS[idx - 1];
-                const next = TOPICS[idx + 1];
+                const idx = byAudience.findIndex((t) => t.id === activeId);
+                const prev = byAudience[idx - 1];
+                const next = byAudience[idx + 1];
                 return (
                   <>
                     {prev ? (
