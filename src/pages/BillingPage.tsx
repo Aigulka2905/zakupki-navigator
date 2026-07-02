@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { openExternal } from "@/lib/url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -508,7 +509,7 @@ const BillingPage = () => {
     onSuccess: (data) => {
       setTopupOpen(false);
       if (data.confirmUrl) {
-        window.open(data.confirmUrl, "_blank");
+        openExternal(data.confirmUrl);
         toast.success("Перенаправляем на страницу оплаты...");
       } else {
         toast.error("Не удалось создать платёж. Проверьте настройки ЮKassa.");

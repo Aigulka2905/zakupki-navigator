@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { openExternal } from "@/lib/url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -237,7 +238,7 @@ function DocViewer({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => window.open(doc.sourceUrl!, "_blank")}
+                onClick={() => openExternal(doc.sourceUrl!)}
               >
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                 Источник
@@ -561,7 +562,7 @@ function DocCard({
                 size="sm"
                 variant="ghost"
                 className="h-8 text-muted-foreground"
-                onClick={() => window.open(doc.sourceUrl!, "_blank")}
+                onClick={() => openExternal(doc.sourceUrl!)}
               >
                 <ExternalLink className="mr-1 h-3.5 w-3.5" />
                 Источник

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { openExternal } from "@/lib/url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Link, useSearchParams } from "react-router-dom";
@@ -567,7 +568,7 @@ const ProcurementsPage = () => {
                           {p.documentationUrl && (
                             <button
                               type="button"
-                              onClick={(e) => { e.preventDefault(); window.open(p.documentationUrl!, "_blank"); }}
+                              onClick={(e) => { e.preventDefault(); openExternal(p.documentationUrl!); }}
                               className="text-muted-foreground/25 transition-colors hover:text-indigo-400"
                             >
                               <ExternalLink className="h-3.5 w-3.5" />

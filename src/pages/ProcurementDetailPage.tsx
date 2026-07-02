@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openExternal } from "@/lib/url";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -556,7 +557,7 @@ function DocRow({ doc }: { doc: DocEntry }) {
       </div>
       <div className="shrink-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
-          onClick={() => window.open(doc.url, "_blank")}
+          onClick={() => openExternal(doc.url)}
           className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border/50 hover:ring-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all"
         >
           <Download className="h-3.5 w-3.5" />
@@ -800,7 +801,7 @@ function TabAiInsights({
         </button>
         {p.documentationUrl && (
           <button
-            onClick={() => window.open(p.documentationUrl!, "_blank")}
+            onClick={() => openExternal(p.documentationUrl!)}
             className="flex items-center gap-2 rounded-xl px-5 py-3 text-[13px] font-semibold ring-1 ring-inset ring-border/60 text-muted-foreground hover:ring-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all duration-150"
           >
             <ExternalLink className="h-4 w-4" />
@@ -1062,7 +1063,7 @@ const ProcurementDetailPage = () => {
         <div className="flex items-center gap-2">
           {p.documentationUrl && (
             <button
-              onClick={() => window.open(p.documentationUrl!, "_blank")}
+              onClick={() => openExternal(p.documentationUrl!)}
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium ring-1 ring-inset ring-border/60 text-muted-foreground hover:ring-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all"
             >
               <ExternalLink className="h-3.5 w-3.5" />

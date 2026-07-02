@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { openExternal } from "@/lib/url";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -272,7 +273,7 @@ export default function CheckSupplierPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => url && window.open(url, "_blank")}
+                          onClick={() => url && openExternal(url)}
                           className="text-xs"
                         >
                           <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
@@ -338,7 +339,7 @@ export default function CheckSupplierPage() {
                   const ogrn = String((checkoData?.["ОГРН"] ?? checkoData?.["ОГРНИП"] ?? "")) || "";
                   return ogrn ? (
                     <Button size="sm" variant="outline" className="text-xs"
-                      onClick={() => window.open(`https://checko.ru/company/${ogrn}`, "_blank")}>
+                      onClick={() => openExternal(`https://checko.ru/company/${ogrn}`)}>
                       <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Открыть на checko.ru
                     </Button>
                   ) : <span />;

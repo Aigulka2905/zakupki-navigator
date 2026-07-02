@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { openExternal } from "@/lib/url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -259,7 +260,7 @@ function ContextCard({
           </Link>
           {procurement.documentationUrl && (
             <button
-              onClick={() => window.open(procurement.documentationUrl!, "_blank")}
+              onClick={() => openExternal(procurement.documentationUrl!)}
               className="flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] ring-1 ring-inset ring-border/50 text-muted-foreground hover:ring-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all"
             >
               <ExternalLink className="h-3 w-3" />

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { openExternal } from "@/lib/url";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -326,7 +327,7 @@ const CalendarPage = () => {
                               variant="ghost"
                               size="sm"
                               className="h-7 gap-1.5 px-2 text-xs"
-                              onClick={(e) => { e.preventDefault(); window.open(p.documentationUrl!, "_blank"); }}
+                              onClick={(e) => { e.preventDefault(); openExternal(p.documentationUrl!); }}
                             >
                               Документация
                               <ExternalLink className="h-3 w-3" />
@@ -378,7 +379,7 @@ const CalendarPage = () => {
                               variant="ghost"
                               size="sm"
                               className="h-7 gap-1.5 px-2 text-xs"
-                              onClick={(e) => { e.preventDefault(); window.open(p.documentationUrl!, "_blank"); }}
+                              onClick={(e) => { e.preventDefault(); openExternal(p.documentationUrl!); }}
                             >
                               Документация
                               <ExternalLink className="h-3 w-3" />
