@@ -17,6 +17,7 @@ const KnowledgeBase = lazy(() => import("./pages/KnowledgeBase.tsx"));
 const DocumentAnalysis = lazy(() => import("./pages/DocumentAnalysis.tsx"));
 const BidEvaluationPage = lazy(() => import("./pages/BidEvaluationPage.tsx"));
 const BidCheckPage = lazy(() => import("./pages/BidCheckPage.tsx"));
+const BatchCheckPage = lazy(() => import("./pages/BatchCheckPage.tsx"));
 const NmckPage = lazy(() => import("./pages/NmckPage.tsx"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage.tsx"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
@@ -92,6 +93,7 @@ const App = () => (
           <Route path="/analysis" element={<ProtectedRoute><DocumentAnalysis /></ProtectedRoute>} />
           <Route path="/bid-evaluation" element={<ProtectedRoute><BidEvaluationPage /></ProtectedRoute>} />
           <Route path="/bid-check" element={<ProtectedRoute><BidCheckPage /></ProtectedRoute>} />
+          <Route path="/batch-check" element={<ProtectedRoute><BatchCheckPage /></ProtectedRoute>} />
           <Route path="/nmck" element={<ProtectedRoute><NmckPage /></ProtectedRoute>} />
           <Route path="/procurements" element={<ProtectedRoute><ProcurementsPage /></ProtectedRoute>} />
           <Route path="/procurements/:id" element={<ProtectedRoute><ProcurementDetailPage /></ProtectedRoute>} />

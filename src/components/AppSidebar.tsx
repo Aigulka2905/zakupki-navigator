@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   Calculator,
   FileCheck2,
+  ShieldAlert,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -157,6 +158,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
+        { title: "Массовая проверка",   url: "/batch-check",            icon: ShieldAlert },
         { title: "Национальный режим",  url: "/national-regime",        icon: Flag },
         { title: "Профиль организации", url: "/organization",           icon: Building2 },
       ]
