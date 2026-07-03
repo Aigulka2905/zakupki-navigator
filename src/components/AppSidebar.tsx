@@ -19,6 +19,7 @@ import {
   Flag,
   ClipboardCheck,
   Calculator,
+  FileCheck2,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -163,6 +164,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Главная",              url: "/",               icon: LayoutDashboard },
         { title: "Чат с ассистентом",    url: "/chat",           icon: MessageSquare },
         { title: "Все закупки",          url: "/procurements",   icon: Briefcase },
+        { title: "Проверка заявки",      url: "/bid-check",      icon: FileCheck2 },
         { title: "Оценка заявок",        url: "/bid-evaluation", icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",           icon: Calculator },
         { title: "Уведомления",          url: "/notifications",  icon: Bell },
