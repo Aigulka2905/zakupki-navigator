@@ -9,6 +9,7 @@ import {
   XCircle, ClipboardCheck, FileCheck2, Clock, Plus, Trash2, Users,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { ProtocolDialog } from "@/components/ProtocolDialog";
 
 type Finding = string | { text: string; ref?: string };
 interface BidResult {
@@ -77,6 +78,7 @@ export default function BidEvaluationPage() {
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [current, setCurrent] = useState<Evaluation | null>(null);
+  const [protocolOpen, setProtocolOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const loadHistory = async () => {
@@ -261,9 +263,14 @@ export default function BidEvaluationPage() {
                       {current.specFileName && <> · ТЗ: {current.specFileName}</>}
                     </p>
                   </div>
-                  <Button size="sm" variant="outline" className="no-print" onClick={() => window.print()}>
-                    <Printer className="mr-1.5 h-3.5 w-3.5" /> Сохранить в PDF
-                  </Button>
+                  <div className="flex gap-2 no-print">
+                    <Button size="sm" onClick={() => setProtocolOpen(true)}>
+                      <FileText className="mr-1.5 h-3.5 w-3.5" /> Сформировать протокол
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => window.print()}>
+                      <Printer className="mr-1.5 h-3.5 w-3.5" /> Сохранить в PDF
+                    </Button>
+                  </div>
                 </div>
 
                 {current.summary && (
@@ -353,6 +360,8 @@ export default function BidEvaluationPage() {
           </Card>
         )}
       </div>
+
+      <ProtocolDialog evaluation={current} open={protocolOpen} onOpenChange={setProtocolOpen} />
     </AppLayout>
   );
 }
