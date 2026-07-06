@@ -38,8 +38,15 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Пропускаем не-401 ошибки и повторные запросы
-    if (error.response?.status !== 401 || original._retry) {
+    // 401 от самих auth-эндпоинтов (login/refresh/register) — это «неверные
+    // данные»/«нет сессии», а НЕ «протух access-токен». Их нельзя гонять через
+    // refresh: иначе реальная ошибка входа подменяется на «Refresh token
+    // отсутствует» и происходит лишний редирект. Отдаём ошибку как есть.
+    const url = original.url ?? '';
+    const isAuthEndpoint = /\/auth\/(login|refresh|register)/.test(url);
+
+    // Пропускаем не-401 ошибки, повторные запросы и auth-эндпоинты
+    if (error.response?.status !== 401 || original._retry || isAuthEndpoint) {
       return Promise.reject(error);
     }
 

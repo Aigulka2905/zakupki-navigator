@@ -254,6 +254,24 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  // Валидация не пройдена: ошибки полей могут быть выше зоны прокрутки, и клик
+  // по кнопке выглядит «без реакции». Показываем видимый баннер у кнопки с
+  // перечнем проблемных полей и прокручиваем форму к первой ошибке.
+  const onInvalid = (errs: Record<string, unknown>) => {
+    const labels: Record<string, string> = {
+      orgType: "тип организации", email: "email", username: "логин",
+      fullName: "полное имя", password: "пароль",
+      orgName: "название организации", inn: "ИНН", kpp: "КПП",
+    };
+    const fields = Object.keys(errs).map((k) => labels[k] ?? k);
+    setServerError(
+      fields.length
+        ? `Заполните корректно: ${fields.join(", ")}.`
+        : "Проверьте правильность заполнения формы.",
+    );
+    document.querySelector('[aria-invalid="true"], input')?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   // Приглашение недействительно — показываем только ошибку.
   if (isInvite && inviteError) {
     return (
@@ -266,7 +284,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const inputClass = "h-11 rounded-xl border-white/40 bg-white/60 backdrop-blur-sm placeholder:text-slate-400 focus:border-violet-300 focus:ring-violet-200";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+    <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3" noValidate>
       {/* Приглашение в организацию */}
       {isInvite && (
         <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm text-violet-700">
