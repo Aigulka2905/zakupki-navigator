@@ -155,7 +155,14 @@ function UsersTab() {
   const block = useSetUserBlocked();
   const impersonate = useImpersonate();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [orgTypeFilter, setOrgTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const PAGE_SIZE = 10;
+
+  // Сброс на первую страницу при смене фильтров/поиска.
+  useEffect(() => { setPage(1); }, [search, roleFilter, orgTypeFilter, statusFilter]);
 
   const onVerify = (id: string) =>
     verify.mutate(id, {
@@ -189,12 +196,67 @@ function UsersTab() {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const q = search.trim().toLowerCase();
+  const filtered = users.filter((u) => {
+    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+    const ot = u.organization?.orgType ?? "participant";
+    if (orgTypeFilter !== "all" && ot !== orgTypeFilter) return false;
+    if (statusFilter === "blocked" && !u.blockedAt) return false;
+    if (statusFilter === "active" && u.blockedAt) return false;
+    if (statusFilter === "unverified" && u.emailVerified) return false;
+    if (q) {
+      const hay = [u.email, u.fullName, u.organization?.name, u.organization?.inn]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pageUsers = users.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pageUsers = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-3">
+    {/* Поиск и фильтры */}
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative flex-1 min-w-[200px]">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Поиск по email, имени, организации, ИНН"
+          className="h-8 pl-8 text-xs"
+        />
+      </div>
+      <Select value={roleFilter} onValueChange={setRoleFilter}>
+        <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Все роли</SelectItem>
+          <SelectItem value="admin">Администратор</SelectItem>
+          <SelectItem value="specialist">Специалист</SelectItem>
+          <SelectItem value="viewer">Наблюдатель</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={orgTypeFilter} onValueChange={setOrgTypeFilter}>
+        <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Все типы</SelectItem>
+          <SelectItem value="participant">Участник</SelectItem>
+          <SelectItem value="customer">Заказчик</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Любой статус</SelectItem>
+          <SelectItem value="active">Активные</SelectItem>
+          <SelectItem value="blocked">Заблокированные</SelectItem>
+          <SelectItem value="unverified">Email не подтверждён</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
     <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
       <Table>
         <TableHeader>
@@ -373,15 +435,24 @@ function UsersTab() {
               </TableRow>
             );
           })}
+          {pageUsers.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                Ничего не найдено по заданным условиям
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </div>
 
-    {totalPages > 1 && (
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-muted-foreground">
-          Показаны {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, users.length)} из {users.length}
-        </span>
+    <div className="flex items-center justify-between px-1">
+      <span className="text-xs text-muted-foreground">
+        {filtered.length === 0
+          ? "Нет пользователей"
+          : `Показаны ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} из ${filtered.length}`}
+      </span>
+      {totalPages > 1 && (
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="h-7 text-xs" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
             Назад
@@ -391,8 +462,8 @@ function UsersTab() {
             Вперёд
           </Button>
         </div>
-      </div>
-    )}
+      )}
+    </div>
     </div>
   );
 }
