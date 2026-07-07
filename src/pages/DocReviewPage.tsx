@@ -4,12 +4,20 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Upload, Loader2, ShieldAlert, AlertTriangle, CheckCircle2, Printer, Gavel, Quote, Wrench,
+  Upload, Loader2, ShieldAlert, AlertTriangle, CheckCircle2, Printer, Gavel, Quote, Wrench, Scale,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { openExternal } from "@/lib/url";
 
-interface Risk { title: string; severity: string; place: string; why: string; fix: string; }
+interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
+interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; }
 interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; }
+
+function citeLabel(c: Citation): string {
+  if (c.law && c.article) return `${c.law} ${c.article}`;
+  if (c.docNumber) return `${c.authority ?? "ФАС"} № ${c.docNumber}`;
+  return c.title ?? "источник";
+}
 
 function sev(s: string) {
   const v = (s || "").toLowerCase();
@@ -28,20 +36,22 @@ function overallStyle(s: string) {
 
 const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function buildHtml(r: ReviewResult): string {
-  const rows = r.risks.map((x, i) =>
-    `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b><div class="s">${esc(x.severity)}</div></td>
-     <td>${x.place ? `<div class="q">«${esc(x.place)}»</div>` : ""}<div>${esc(x.why)}</div>${x.fix ? `<div class="f"><b>Исправить:</b> ${esc(x.fix)}</div>` : ""}</td></tr>`).join("");
+  const rows = r.risks.map((x, i) => {
+    const cites = (x.citations ?? []).map((c) => `${esc(citeLabel(c))}${c.url ? ` (${esc(c.url)})` : ""}`).join("; ");
+    return `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b><div class="s">${esc(x.severity)}</div></td>
+     <td>${x.place ? `<div class="q">«${esc(x.place)}»</div>` : ""}<div>${esc(x.why)}</div>${x.fix ? `<div class="f"><b>Исправить:</b> ${esc(x.fix)}</div>` : ""}${cites ? `<div class="c"><b>Основание:</b> ${cites}</div>` : ""}</td></tr>`;
+  }).join("");
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
     body{font-family:Arial,"DejaVu Sans",sans-serif;font-size:11px;color:#1a1a2e;margin:24px}
     h1{font-size:15px;margin:0 0 4px} .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:600;background:#fee2e2;color:#991b1b}
     table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ccd;padding:6px 8px;text-align:left;vertical-align:top}
     th{background:#f3f5fa} .s{color:#667;font-size:10px} .q{color:#556;font-style:italic;margin-bottom:3px} .f{color:#155e3b;margin-top:3px}
-    .foot{margin-top:12px;color:#889;font-size:10px}</style></head><body>
+    .c{color:#3b3a6b;margin-top:3px;font-size:10px} .foot{margin-top:12px;color:#889;font-size:10px}</style></head><body>
     <h1>Проверка документации на риски обжалования (ФАС)</h1>
     <div>Общий риск: <span class="badge">${esc(r.overallRisk)}</span></div>
     ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
-    <table><thead><tr><th style="width:28px">№</th><th style="width:34%">Риск</th><th>Обоснование и как исправить</th></tr></thead><tbody>${rows || "<tr><td colspan=3>Риски не выявлены</td></tr>"}</tbody></table>
-    <div class="foot">Сформировано в ZakupkiAI. Носит рекомендательный/проектный характер — перед публикацией согласуйте с юристом.</div>
+    <table><thead><tr><th style="width:28px">№</th><th style="width:34%">Риск</th><th>Обоснование, нормы и как исправить</th></tr></thead><tbody>${rows || "<tr><td colspan=3>Риски не выявлены</td></tr>"}</tbody></table>
+    <div class="foot">Сформировано в ZakupkiAI. Основания приведены со ссылками на нормы; итоговое решение принимает заказчик. Спорные моменты согласуйте с юристом.</div>
   </body></html>`;
 }
 
@@ -160,6 +170,28 @@ export default function DocReviewPage() {
                           {r.fix && (
                             <p className="mt-1.5 flex gap-1.5 text-xs text-emerald-700 dark:text-emerald-400"><Wrench className="h-3 w-3 shrink-0 mt-0.5" /><span><b>Как исправить:</b> {r.fix}</span></p>
                           )}
+                          {r.citations && r.citations.length > 0 ? (
+                            <div className="mt-2 rounded-md bg-indigo-500/5 border border-indigo-500/15 px-2.5 py-2">
+                              <p className="flex items-center gap-1.5 text-[11px] font-medium text-indigo-700 dark:text-indigo-300">
+                                <Scale className="h-3 w-3" /> Основание
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {r.citations.map((c, ci) => {
+                                  const label = citeLabel(c);
+                                  return c.url ? (
+                                    <button key={ci} onClick={() => openExternal(c.url!)} title={c.quote ?? c.title ?? ""}
+                                      className="inline-flex items-center gap-1 rounded border border-indigo-500/30 bg-background px-1.5 py-0.5 text-[11px] text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10">
+                                      {label}
+                                    </button>
+                                  ) : (
+                                    <span key={ci} title={c.quote ?? ""} className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">{label}</span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] text-muted-foreground/70 italic">Без подтверждённого прецедента в базе — проверьте норму самостоятельно.</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -169,7 +201,7 @@ export default function DocReviewPage() {
             )}
 
             <p className="text-[11px] text-muted-foreground border-t border-border pt-2">
-              ⚠ Проверка сформирована ИИ и носит рекомендательный характер. Итоговое решение о публикации принимает заказчик; спорные моменты согласуйте с юристом.
+              ⚖ К находкам приведены основания со ссылками на нормы — проверьте их по первоисточнику. Итоговое решение о публикации принимает заказчик; спорные моменты согласуйте с юристом.
             </p>
           </Card>
         )}
