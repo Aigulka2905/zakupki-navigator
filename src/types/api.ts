@@ -295,6 +295,11 @@ export interface SystemInfo {
     maxSessions: number;
     corsOrigin: string;
   };
+  integrations?: {
+    docExtraction: { configured: boolean; url: string | null };
+    egrul: { configured: boolean; provider: string };
+    redis: { configured: boolean };
+  };
   nodeVersion: string;
   environment: string;
 }

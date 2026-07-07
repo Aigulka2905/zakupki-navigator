@@ -41,6 +41,9 @@ import {
   Ban,
   ShieldCheck as ShieldCheckIcon,
   BadgeCheck,
+  FileScan,
+  Landmark,
+  Database,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -151,6 +154,8 @@ function UsersTab() {
   const verify = useVerifyUser();
   const block = useSetUserBlocked();
   const impersonate = useImpersonate();
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const onVerify = (id: string) =>
     verify.mutate(id, {
@@ -184,7 +189,12 @@ function UsersTab() {
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageUsers = users.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   return (
+    <div className="space-y-3">
     <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
       <Table>
         <TableHeader>
@@ -200,7 +210,7 @@ function UsersTab() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {users.map((user) => {
+          {pageUsers.map((user) => {
             const orgType = user.organization?.orgType ?? "participant";
             const plan = (user.organization?.subscriptionPlan ?? "free") as SubscriptionPlan;
             const isSelf = user.id === me?.id;
@@ -366,6 +376,24 @@ function UsersTab() {
         </TableBody>
       </Table>
     </div>
+
+    {totalPages > 1 && (
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs text-muted-foreground">
+          Показаны {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, users.length)} из {users.length}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
+            Назад
+          </Button>
+          <span className="text-xs text-muted-foreground tabular-nums">{currentPage} / {totalPages}</span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>
+            Вперёд
+          </Button>
+        </div>
+      </div>
+    )}
+    </div>
   );
 }
 
@@ -466,7 +494,7 @@ function SyncCards() {
 }
 
 function ParametersTab() {
-  const { data: sys } = useSystemInfo();
+  const { data: sys, refetch, isFetching } = useSystemInfo();
   const { data: stats } = useAdminStats();
 
   if (!sys) {
@@ -478,7 +506,21 @@ function ParametersTab() {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Текущая конфигурация окружения ({sys.environment}).</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5 text-xs"
+          disabled={isFetching}
+          onClick={() => refetch()}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} /> Обновить
+        </Button>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <InfoCard
         icon={Bot}
         title="AI-ассистент"
@@ -556,7 +598,37 @@ function ParametersTab() {
         ]}
       />
 
+      <InfoCard
+        icon={FileScan}
+        title="Документы / OCR"
+        rows={[
+          { label: "Сайдкар", value: <StatusDot ok={!!sys.integrations?.docExtraction.configured} /> },
+          { label: "Извлечение", value: sys.integrations?.docExtraction.configured ? "markitdown + OCR" : "встроенное (unpdf)" },
+          ...(sys.integrations?.docExtraction.url
+            ? [{ label: "URL", value: <span className="font-mono text-[11px]">{sys.integrations.docExtraction.url}</span> }]
+            : []),
+        ]}
+      />
+
+      <InfoCard
+        icon={Landmark}
+        title="ЕГРЮЛ / контрагенты"
+        rows={[
+          { label: "Checko", value: <StatusDot ok={!!sys.integrations?.egrul.configured} /> },
+          { label: "Источник", value: sys.integrations?.egrul.provider ?? "—" },
+        ]}
+      />
+
+      <InfoCard
+        icon={Database}
+        title="Redis"
+        rows={[
+          { label: "Очереди / кэш", value: <StatusDot ok={!!sys.integrations?.redis.configured} /> },
+        ]}
+      />
+
       <SyncCards />
+      </div>
     </div>
   );
 }
