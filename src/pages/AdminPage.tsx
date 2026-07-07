@@ -37,14 +37,23 @@ import {
   ChevronRight,
   ClipboardList,
   User,
+  LogIn,
+  Ban,
+  ShieldCheck as ShieldCheckIcon,
+  BadgeCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   useAdminUsers,
   useAdminStats,
   useSystemInfo,
   useUpdateUserRole,
   useUpdateOrgPlan,
+  useVerifyUser,
+  useSetUserBlocked,
+  useImpersonate,
   useAdminLogs,
   useAdminAudit,
   useSyncStatus,
@@ -136,8 +145,36 @@ function InfoCard({
 
 function UsersTab() {
   const { data: users = [], isLoading } = useAdminUsers();
+  const { data: me } = useCurrentUser();
   const { mutate: updateRole } = useUpdateUserRole();
   const { mutate: updatePlan } = useUpdateOrgPlan();
+  const verify = useVerifyUser();
+  const block = useSetUserBlocked();
+  const impersonate = useImpersonate();
+
+  const onVerify = (id: string) =>
+    verify.mutate(id, {
+      onSuccess: () => toast.success("Аккаунт подтверждён"),
+      onError: () => toast.error("Не удалось подтвердить аккаунт"),
+    });
+
+  const onToggleBlock = (id: string, currentlyBlocked: boolean) => {
+    if (!currentlyBlocked && !window.confirm("Заблокировать пользователя? Он не сможет войти и будет отключён от текущих сессий.")) return;
+    block.mutate(
+      { userId: id, blocked: !currentlyBlocked },
+      {
+        onSuccess: () => toast.success(currentlyBlocked ? "Пользователь разблокирован" : "Пользователь заблокирован"),
+        onError: (e: unknown) => toast.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось изменить статус"),
+      },
+    );
+  };
+
+  const onImpersonate = (id: string, email: string) => {
+    if (!window.confirm(`Войти под пользователем ${email}?\nТекущая админ-сессия будет заменена. Чтобы вернуться, выйдите и войдите снова как администратор.`)) return;
+    impersonate.mutate(id, {
+      onError: (e: unknown) => toast.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось войти под пользователем"),
+    });
+  };
 
   if (isLoading) {
     return (
@@ -148,7 +185,7 @@ function UsersTab() {
   }
 
   return (
-    <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-hidden">
+    <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="dark:border-white/[0.06] hover:bg-transparent">
@@ -159,21 +196,35 @@ function UsersTab() {
             <TableHead className="text-xs font-semibold text-muted-foreground">Тариф</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-center">Email</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground">Регистрация</TableHead>
+            <TableHead className="text-xs font-semibold text-muted-foreground text-right">Действия</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {users.map((user) => {
             const orgType = user.organization?.orgType ?? "participant";
             const plan = (user.organization?.subscriptionPlan ?? "free") as SubscriptionPlan;
+            const isSelf = user.id === me?.id;
+            const isAdmin = user.role === "admin";
+            const isBlocked = !!user.blockedAt;
 
             return (
               <TableRow
                 key={user.id}
-                className="dark:border-white/[0.04] dark:hover:bg-white/[0.02]"
+                className={cn(
+                  "dark:border-white/[0.04] dark:hover:bg-white/[0.02]",
+                  isBlocked && "opacity-60",
+                )}
               >
                 {/* Name + email */}
                 <TableCell className="py-3">
-                  <div className="font-medium text-sm leading-tight">{user.fullName}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm leading-tight">{user.fullName}</span>
+                    {isBlocked && (
+                      <Badge variant="outline" className="text-[10px] font-semibold border-rose-300 text-rose-600 dark:border-rose-500/40 dark:text-rose-400">
+                        Заблокирован
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">{user.email}</div>
                 </TableCell>
 
@@ -256,14 +307,58 @@ function UsersTab() {
                   )}
                 </TableCell>
 
-                {/* Email verified */}
+                {/* Email verified + ручное подтверждение */}
                 <TableCell className="text-center">
-                  <StatusDot ok={!!user.emailVerified} />
+                  {user.emailVerified ? (
+                    <StatusDot ok />
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 text-[11px]"
+                      disabled={verify.isPending}
+                      onClick={() => onVerify(user.id)}
+                    >
+                      <BadgeCheck className="h-3.5 w-3.5" /> Подтвердить
+                    </Button>
+                  )}
                 </TableCell>
 
                 {/* Created at */}
-                <TableCell className="text-xs text-muted-foreground">
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                   {new Date(user.createdAt).toLocaleDateString("ru-RU")}
+                </TableCell>
+
+                {/* Действия: вход под пользователем + блокировка */}
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 text-[11px]"
+                      disabled={isSelf || isAdmin || isBlocked || impersonate.isPending}
+                      title={isSelf ? "Это ваша учётная запись" : isAdmin ? "Нельзя войти под администратором" : isBlocked ? "Разблокируйте пользователя" : "Войти в систему под этим пользователем"}
+                      onClick={() => onImpersonate(user.id, user.email)}
+                    >
+                      <LogIn className="h-3.5 w-3.5" /> Войти
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={cn(
+                        "h-7 gap-1 text-[11px]",
+                        isBlocked
+                          ? "border-emerald-300 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400"
+                          : "border-rose-300 text-rose-600 dark:border-rose-500/40 dark:text-rose-400",
+                      )}
+                      disabled={isSelf || isAdmin || block.isPending}
+                      title={isSelf ? "Нельзя заблокировать себя" : isAdmin ? "Нельзя заблокировать администратора" : ""}
+                      onClick={() => onToggleBlock(user.id, isBlocked)}
+                    >
+                      {isBlocked ? <ShieldCheckIcon className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                      {isBlocked ? "Разблок." : "Блок"}
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -730,6 +825,10 @@ const ACTION_LABELS: Record<string, string> = {
   "analysis.upload":               "Анализ документа",
   "admin.role_update":             "Изменение роли",
   "admin.plan_update":             "Изменение тарифа",
+  "admin.user_verify":             "Подтверждение аккаунта",
+  "admin.user_block":              "Блокировка пользователя",
+  "admin.user_unblock":            "Разблокировка пользователя",
+  "admin.impersonate":             "Вход под пользователем",
   "admin.model_change":            "Смена AI-модели",
   "admin.sync_rftorgi":            "Синхронизация РФТорги",
 };

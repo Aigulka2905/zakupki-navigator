@@ -257,6 +257,8 @@ export interface ApiError {
 
 export interface AdminUser extends User {
   emailVerified: boolean;
+  blockedAt?: string | null;
+  isOrgOwner?: boolean;
 }
 
 export interface AdminStats {

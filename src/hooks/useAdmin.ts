@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
+import { tokenStorage } from "@/lib/auth";
 import type { AdminUser, AdminStats, SystemInfo } from "@/types/api";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -82,6 +83,40 @@ export function useUpdateOrgPlan() {
       apiClient.patch(`/admin/organizations/${orgId}/plan`, { plan }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+  });
+}
+
+// Подтверждение аккаунта вручную (вместо письма).
+export function useVerifyUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      apiClient.patch(`/admin/users/${userId}/verify`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+// Блокировка / разблокировка.
+export function useSetUserBlocked() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, blocked }: { userId: string; blocked: boolean }) =>
+      apiClient.patch(`/admin/users/${userId}/block`, { blocked }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+  });
+}
+
+// Вход под пользователем: получаем его access-токен, подменяем сессию и
+// перезагружаем приложение с чистого листа (жёсткая навигация сбрасывает всё
+// состояние react-query от админа).
+export function useImpersonate() {
+  return useMutation({
+    mutationFn: (userId: string) =>
+      apiClient.post<{ accessToken: string }>(`/admin/users/${userId}/impersonate`).then((r) => r.data),
+    onSuccess: (data) => {
+      tokenStorage.setTokens(data.accessToken);
+      window.location.href = "/";
     },
   });
 }
