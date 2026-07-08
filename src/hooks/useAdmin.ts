@@ -139,6 +139,61 @@ export function useResetActiveModel() {
   });
 }
 
+// ── Правовой корпус (нормативные документы + свежесть редакций) ──
+export interface LegalDocument {
+  id: string;
+  law: string;
+  name: string;
+  url?: string | null;
+  currentRevision?: string | null;
+  latestRevision?: string | null;
+  ranges?: string | null;
+  updateAvailable: boolean;
+  articleCount: number;
+  ingestedAt: string;
+  lastCheckedAt?: string | null;
+}
+
+export function useLegalCorpus() {
+  return useQuery({
+    queryKey: ["admin-legal"],
+    queryFn: () => apiClient.get<LegalDocument[]>("/admin/legal").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+
+export function useLegalCheck() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post<LegalDocument[]>("/admin/legal/check").then((r) => r.data),
+    onSuccess: (data) => qc.setQueryData(["admin-legal"], data),
+  });
+}
+
+export function useLegalAck() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.patch(`/admin/legal/${id}/ack`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-legal"] }),
+  });
+}
+
+export function useLegalReingest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      // Переигестия закона (извлечение + эмбеддинги) может идти минуты — большой таймаут.
+      return apiClient.post(`/admin/legal/${id}/reingest`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 600_000,
+      }).then((r) => r.data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-legal"] }),
+  });
+}
+
 export function useResetModelLimit() {
   const qc = useQueryClient();
   return useMutation({

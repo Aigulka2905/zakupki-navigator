@@ -44,6 +44,9 @@ import {
   FileScan,
   Landmark,
   Database,
+  Scale,
+  Upload,
+  AlertTriangle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,12 +60,17 @@ import {
   useVerifyUser,
   useSetUserBlocked,
   useImpersonate,
+  useLegalCorpus,
+  useLegalCheck,
+  useLegalAck,
+  useLegalReingest,
   useAdminLogs,
   useAdminAudit,
   useSyncStatus,
   useSyncRftorgi,
   useSyncAftorgi,
 } from "@/hooks/useAdmin";
+import type { LegalDocument } from "@/hooks/useAdmin";
 import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
 import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
@@ -704,6 +712,119 @@ function ParametersTab() {
   );
 }
 
+// ── Legal corpus tab ──────────────────────────────────────────
+
+function LegalRow({ doc }: { doc: LegalDocument }) {
+  const ack = useLegalAck();
+  const reingest = useLegalReingest();
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!window.confirm(`Загрузить обновлённый текст «${doc.law}»?\nСтарые статьи будут заменены, потребуется переиндексация (может занять минуты).`)) return;
+    reingest.mutate(
+      { id: doc.id, file },
+      {
+        onSuccess: (r: { revision?: string; articles?: number }) =>
+          toast.success(`${doc.law} обновлён: редакция ${r.revision ?? "—"}, статей ${r.articles ?? "—"}`),
+        onError: (err: unknown) => toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось обновить документ"),
+      },
+    );
+  };
+
+  return (
+    <TableRow className="dark:border-white/[0.04]">
+      <TableCell className="py-3">
+        <div className="font-medium text-sm">{doc.law}</div>
+        <div className="text-[11px] text-muted-foreground">{doc.name}</div>
+      </TableCell>
+      <TableCell className="text-xs whitespace-nowrap">ред. от {doc.currentRevision ?? "—"}</TableCell>
+      <TableCell className="text-xs tabular-nums">{doc.articleCount}</TableCell>
+      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+        {new Date(doc.ingestedAt).toLocaleDateString("ru-RU")}
+      </TableCell>
+      <TableCell>
+        {doc.updateAvailable ? (
+          <Badge variant="outline" className="gap-1 text-[10px] font-semibold border-amber-400 text-amber-700 dark:border-amber-500/50 dark:text-amber-400">
+            <AlertTriangle className="h-3 w-3" /> Обновление от {doc.latestRevision}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="gap-1 text-[10px] font-semibold border-emerald-300 text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-400">
+            <CheckCircle2 className="h-3 w-3" /> Актуально
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-1.5">
+          <input type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" onChange={onFile} id={`reingest-${doc.id}`} />
+          <Button asChild size="sm" variant="outline" className="h-7 gap-1 text-[11px]" disabled={reingest.isPending}>
+            <label htmlFor={`reingest-${doc.id}`} className="cursor-pointer">
+              {reingest.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              Загрузить обновление
+            </label>
+          </Button>
+          {doc.updateAvailable && (
+            <Button size="sm" variant="ghost" className="h-7 text-[11px] text-muted-foreground"
+              disabled={ack.isPending} onClick={() => ack.mutate(doc.id)}>
+              Скрыть
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function LegalCorpusTab() {
+  const { data: docs = [], isLoading } = useLegalCorpus();
+  const check = useLegalCheck();
+
+  if (isLoading) {
+    return <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">Загрузка...</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground max-w-2xl">
+          Нормативные документы, на которые ИИ ссылается при проверках. Раз в неделю система сверяет
+          редакции с первоисточником и уведомляет об изменениях — тогда загрузите сюда обновлённый текст.
+        </p>
+        <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs shrink-0"
+          disabled={check.isPending}
+          onClick={() => check.mutate(undefined, {
+            onSuccess: () => toast.success("Проверка выполнена"),
+            onError: () => toast.error("Не удалось проверить обновления"),
+          })}>
+          <RefreshCw className={cn("h-3.5 w-3.5", check.isPending && "animate-spin")} /> Проверить обновления
+        </Button>
+      </div>
+
+      <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="dark:border-white/[0.06] hover:bg-transparent">
+              <TableHead className="text-xs font-semibold text-muted-foreground">Документ</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Редакция</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Статей</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Загружено</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Статус</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {docs.map((d) => <LegalRow key={d.id} doc={d} />)}
+            {docs.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">Корпус пуст — загрузите тексты законов</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ── Logs tab ──────────────────────────────────────────────────
 
 const LEVEL_OPTIONS = ["all", "error", "warn", "info"] as const;
@@ -1177,11 +1298,15 @@ export default function AdminPage() {
   return (
     <AppLayout title="Администрирование" subtitle="Управление пользователями и параметрами системы">
       <div className="p-4 md:p-6 space-y-6">
-        <Tabs defaultValue="users">
+        <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") ?? "users"}>
           <TabsList className="h-9 dark:bg-white/[0.04]">
             <TabsTrigger value="users" className="gap-1.5 text-xs">
               <Users className="h-3.5 w-3.5" />
               Пользователи
+            </TabsTrigger>
+            <TabsTrigger value="legal" className="gap-1.5 text-xs">
+              <Scale className="h-3.5 w-3.5" />
+              Правовой корпус
             </TabsTrigger>
             <TabsTrigger value="params" className="gap-1.5 text-xs">
               <Settings2 className="h-3.5 w-3.5" />
@@ -1203,6 +1328,10 @@ export default function AdminPage() {
 
           <TabsContent value="users" className="mt-4">
             <UsersTab />
+          </TabsContent>
+
+          <TabsContent value="legal" className="mt-4">
+            <LegalCorpusTab />
           </TabsContent>
 
           <TabsContent value="params" className="mt-4">
