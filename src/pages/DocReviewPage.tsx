@@ -11,7 +11,13 @@ import { openExternal } from "@/lib/url";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
 interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; }
-interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; }
+interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; }
+
+const MODE_LAWS: Record<string, string> = {
+  "223": "223-ФЗ · ГК РФ · ФЗ-135",
+  "44": "44-ФЗ · ГК РФ · ФЗ-135",
+  commercial: "ГК РФ · ФЗ-135",
+};
 
 function citeLabel(c: Citation): string {
   if (c.law && c.article) return `${c.law} ${c.article}`;
@@ -55,8 +61,16 @@ function buildHtml(r: ReviewResult): string {
   </body></html>`;
 }
 
+type Mode = "223" | "44" | "commercial";
+const MODES: { value: Mode; label: string; hint: string }[] = [
+  { value: "223", label: "По 223-ФЗ", hint: "223-ФЗ + ГК РФ + ФЗ-135 «О защите конкуренции»" },
+  { value: "44", label: "По 44-ФЗ", hint: "44-ФЗ + ГК РФ + ФЗ-135 «О защите конкуренции»" },
+  { value: "commercial", label: "Коммерческая", hint: "ГК РФ + ФЗ-135 (без 44/223-ФЗ)" },
+];
+
 export default function DocReviewPage() {
   const [files, setFiles] = useState<File[]>([]);
+  const [mode, setMode] = useState<Mode>("223");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReviewResult | null>(null);
@@ -66,6 +80,7 @@ export default function DocReviewPage() {
     if (files.length === 0) { setError("Загрузите файлы документации закупки"); return; }
     const form = new FormData();
     files.forEach((f) => form.append("docs", f));
+    form.append("mode", mode);
     setLoading(true); setResult(null);
     try {
       const { data } = await apiClient.post<ReviewResult>("/doc-review", form, {
@@ -97,7 +112,27 @@ export default function DocReviewPage() {
       <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
 
         <Card className="p-6">
-          <label className="text-sm font-medium">Документация закупки (проект)</label>
+          <label className="text-sm font-medium">Способ закупки</label>
+          <p className="mt-0.5 text-xs text-muted-foreground">Определяет, по каким законам проверять — 223-ФЗ анализируется без норм 44-ФЗ.</p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => setMode(m.value)}
+                className={`rounded-lg border p-2.5 text-left transition-colors ${
+                  mode === m.value
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                    : "border-border hover:border-primary/40"
+                }`}
+              >
+                <div className="text-sm font-medium">{m.label}</div>
+                <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">{m.hint}</div>
+              </button>
+            ))}
+          </div>
+
+          <label className="mt-5 block text-sm font-medium">Документация закупки (проект)</label>
           <p className="mt-0.5 text-xs text-muted-foreground">Извещение, ТЗ, проект договора. Можно несколько файлов.</p>
           <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
             <Upload className="h-4 w-4 text-primary shrink-0" />
@@ -138,6 +173,9 @@ export default function DocReviewPage() {
                   <ov.Icon className="h-4 w-4" /> Общий риск: {result.overallRisk}
                 </span>
                 <span className="text-xs text-muted-foreground">выявлено рисков: {result.risks.length}</span>
+                {result.mode && MODE_LAWS[result.mode] && (
+                  <span className="text-[11px] text-muted-foreground">· проверено по: {MODE_LAWS[result.mode]}</span>
+                )}
               </div>
               <Button size="sm" variant="outline" className="text-xs" onClick={downloadPdf}>
                 <Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF
