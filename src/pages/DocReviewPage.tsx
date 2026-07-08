@@ -53,7 +53,7 @@ function buildHtml(r: ReviewResult): string {
     table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ccd;padding:6px 8px;text-align:left;vertical-align:top}
     th{background:#f3f5fa} .s{color:#667;font-size:10px} .q{color:#556;font-style:italic;margin-bottom:3px} .f{color:#155e3b;margin-top:3px}
     .c{color:#3b3a6b;margin-top:3px;font-size:10px} .foot{margin-top:12px;color:#889;font-size:10px}</style></head><body>
-    <h1>Проверка документации на риски обжалования (ФАС)</h1>
+    <h1>Проверка документации на риски нарушений и обжалования</h1>
     <div>Общий риск: <span class="badge">${esc(r.overallRisk)}</span></div>
     ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
     <table><thead><tr><th style="width:28px">№</th><th style="width:34%">Риск</th><th>Обоснование, нормы и как исправить</th></tr></thead><tbody>${rows || "<tr><td colspan=3>Риски не выявлены</td></tr>"}</tbody></table>
@@ -108,7 +108,7 @@ export default function DocReviewPage() {
   const ov = result ? overallStyle(result.overallRisk) : null;
 
   return (
-    <AppLayout title="Проверка документации" subtitle="Проверьте проект закупки на риски обжалования в ФАС до публикации">
+    <AppLayout title="Проверка документации" subtitle="Проверьте проект закупки на риски нарушений и обжалования до публикации">
       <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
 
         <Card className="p-6">
@@ -160,7 +160,7 @@ export default function DocReviewPage() {
         {loading && (
           <Card className="p-6">
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Анализируем документацию на риски ФАС…
+              <Loader2 className="h-4 w-4 animate-spin" /> Анализируем документацию на риски…
             </div>
           </Card>
         )}
@@ -186,7 +186,7 @@ export default function DocReviewPage() {
 
             {result.risks.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
-                <CheckCircle2 className="h-4 w-4" /> Явных рисков обжалования не выявлено. Всё равно проверьте документацию по внутреннему регламенту.
+                <CheckCircle2 className="h-4 w-4" /> Явных рисков не выявлено. Всё равно проверьте документацию по внутреннему регламенту.
               </div>
             ) : (
               <div className="space-y-3">
