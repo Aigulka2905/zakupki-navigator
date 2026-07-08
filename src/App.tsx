@@ -14,7 +14,6 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 const Index = lazy(() => import("./pages/Index.tsx"));
 const ChatPage = lazy(() => import("./pages/ChatPage.tsx"));
 const KnowledgeBase = lazy(() => import("./pages/KnowledgeBase.tsx"));
-const DocumentAnalysis = lazy(() => import("./pages/DocumentAnalysis.tsx"));
 const BidEvaluationPage = lazy(() => import("./pages/BidEvaluationPage.tsx"));
 const BidCheckPage = lazy(() => import("./pages/BidCheckPage.tsx"));
 const BatchCheckPage = lazy(() => import("./pages/BatchCheckPage.tsx"));
@@ -91,7 +90,8 @@ const App = () => (
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><ChatPageWithKey /></ProtectedRoute>} />
           <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
-          <Route path="/analysis" element={<ProtectedRoute><DocumentAnalysis /></ProtectedRoute>} />
+          {/* «Анализ документа» объединён с грунтованной «Проверкой документации» */}
+          <Route path="/analysis" element={<Navigate to="/doc-review" replace />} />
           <Route path="/bid-evaluation" element={<ProtectedRoute><BidEvaluationPage /></ProtectedRoute>} />
           <Route path="/bid-check" element={<ProtectedRoute><BidCheckPage /></ProtectedRoute>} />
           <Route path="/batch-check" element={<ProtectedRoute><BatchCheckPage /></ProtectedRoute>} />

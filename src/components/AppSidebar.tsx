@@ -2,7 +2,6 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   MessageSquare,
-  FileSearch,
   Settings,
   History,
   Briefcase,
@@ -154,7 +153,6 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Чат с ассистентом",    url: "/chat",                   icon: MessageSquare },
         { title: "Мои закупки",          url: "/procurements?mine=true", icon: Briefcase },
         { title: "Все закупки",          url: "/procurements",           icon: Briefcase },
-        { title: "Анализ документа",     url: "/analysis",               icon: FileSearch },
         { title: "Проверка документации", url: "/doc-review",            icon: Gavel },
         { title: "Оценка заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },

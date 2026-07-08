@@ -373,7 +373,7 @@ const Dashboard = () => {
         { label: "Активных закупок",   value: stats?.activeProcurements ?? "—",  delta: "Принимаются заявки",                    icon: TrendingUp,    iconCls: "text-emerald-400", bgCls: "bg-emerald-500/10", to: "/procurements?status=active&onlyMine=true", loading: statsLoading },
         { label: "Дедлайны на неделе", value: stats?.deadlinesThisWeek ?? "—",   delta: stats?.nextDeadline ? `Ближ. — ${fmtDate(stats.nextDeadline, { day: "2-digit", month: "2-digit" })}` : "Нет срочных", icon: AlertTriangle, iconCls: "text-red-400", bgCls: "bg-red-500/10", to: "/calendar", loading: statsLoading },
         { label: "Всего закупок",      value: stats?.totalProcurements ?? "—",   delta: "Размещено вашей организацией",           icon: ListChecks,    iconCls: "text-indigo-400",  bgCls: "bg-indigo-500/10",  to: "/procurements?onlyMine=true",            loading: statsLoading },
-        { label: "AI-анализов",        value: stats?.completedAnalyses ?? "—",   delta: "Документов проверено",                   icon: FileCheck2,    iconCls: "text-violet-400",  bgCls: "bg-violet-500/10",  to: "/analysis",                              loading: statsLoading },
+        { label: "AI-анализов",        value: stats?.completedAnalyses ?? "—",   delta: "Документов проверено",                   icon: FileCheck2,    iconCls: "text-violet-400",  bgCls: "bg-violet-500/10",  to: "/doc-review",                              loading: statsLoading },
       ]
     : [
         { label: "Активные закупки",   value: stats?.activeProcurements ?? "—",  delta: `${stats?.totalProcurements ?? 0} всего в реестре`, icon: TrendingUp, iconCls: "text-indigo-400", bgCls: "bg-indigo-500/10", to: "/procurements?status=active", loading: statsLoading },
@@ -476,7 +476,7 @@ const Dashboard = () => {
                     icon={FileText}
                     label="Анализ"
                     description="Проверить документ"
-                    to="/analysis"
+                    to="/doc-review"
                     iconCls="text-violet-400"
                     bgCls="bg-violet-500/10"
                   />
