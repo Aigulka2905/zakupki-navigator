@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, FileText, Loader2, ShieldCheck, CheckCircle2, AlertTriangle,
-  XCircle, HelpCircle, ClipboardList, FileWarning, Lightbulb, Printer,
+  XCircle, HelpCircle, ClipboardList, FileWarning, Lightbulb, Printer, Scale,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { openExternal } from "@/lib/url";
 
-interface ChecklistItem { requirement: string; status: string; detail: string; ref: string; }
+interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
+interface ChecklistItem { requirement: string; status: string; detail: string; ref: string; citations?: Citation[]; confidence?: string; }
 interface CheckResult {
   verdict: string;
   score: number | null;
@@ -17,6 +19,20 @@ interface CheckResult {
   checklist: ChecklistItem[];
   missingDocuments: string[];
   recommendations: string[];
+  mode?: string;
+}
+
+type Mode = "223" | "44" | "commercial";
+const MODES: { value: Mode; label: string; hint: string }[] = [
+  { value: "223", label: "По 223-ФЗ", hint: "223-ФЗ + ГК РФ + ФЗ-135" },
+  { value: "44", label: "По 44-ФЗ", hint: "44-ФЗ + ГК РФ + ФЗ-135" },
+  { value: "commercial", label: "Коммерческая", hint: "ГК РФ + ФЗ-135" },
+];
+const MODE_LAWS: Record<string, string> = { "223": "223-ФЗ · ГК РФ · ФЗ-135", "44": "44-ФЗ · ГК РФ · ФЗ-135", commercial: "ГК РФ · ФЗ-135" };
+function citeLabel(c: Citation): string {
+  if (c.law && c.article) return `${c.law} ${c.article}`;
+  if (c.docNumber) return `${c.authority ?? "ФАС"} № ${c.docNumber}`;
+  return c.title ?? "источник";
 }
 
 function verdictStyle(v: string) {
@@ -63,6 +79,7 @@ function buildReportHtml(r: CheckResult): string {
 export default function BidCheckPage() {
   const [specFiles, setSpecFiles] = useState<File[]>([]);
   const [bidFiles, setBidFiles] = useState<File[]>([]);
+  const [mode, setMode] = useState<Mode>("223");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
@@ -74,6 +91,7 @@ export default function BidCheckPage() {
     const form = new FormData();
     specFiles.forEach((f) => form.append("spec", f));
     bidFiles.forEach((f) => form.append("bid", f));
+    form.append("mode", mode);
     setLoading(true);
     setResult(null);
     try {
@@ -109,6 +127,19 @@ export default function BidCheckPage() {
 
         {/* Форма */}
         <Card className="p-6">
+          <label className="text-sm font-medium">Способ закупки</label>
+          <p className="mt-0.5 text-xs text-muted-foreground">По какому закону проводится закупка — для ссылок на нормы.</p>
+          <div className="mt-2 mb-4 grid grid-cols-3 gap-2">
+            {MODES.map((m) => (
+              <button key={m.value} type="button" onClick={() => setMode(m.value)}
+                className={`rounded-lg border p-2.5 text-left transition-colors ${
+                  mode === m.value ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40"
+                }`}>
+                <div className="text-sm font-medium">{m.label}</div>
+                <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">{m.hint}</div>
+              </button>
+            ))}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="text-sm font-medium">Документация закупки (ТЗ)</label>
@@ -198,6 +229,17 @@ export default function BidCheckPage() {
                             {c.ref && <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-foreground/70">{c.ref}</span>}
                           </p>
                           {c.detail && <p className="text-xs text-muted-foreground mt-0.5">{c.detail}</p>}
+                          {c.citations && c.citations.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-700 dark:text-indigo-300"><Scale className="h-3 w-3" /> Основание:</span>
+                              {c.citations.map((ci, k) => ci.url ? (
+                                <button key={k} onClick={() => openExternal(ci.url!)} title={ci.quote ?? ci.title ?? ""}
+                                  className="rounded border border-indigo-500/30 bg-background px-1.5 py-0.5 text-[10px] text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10">{citeLabel(ci)}</button>
+                              ) : (
+                                <span key={k} title={ci.quote ?? ""} className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{citeLabel(ci)}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </li>
                     );
