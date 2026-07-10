@@ -135,7 +135,7 @@ function buildActivities(sessions: ChatSession[], analyses: AnalysisItem[]): Act
       title: name,
       description,
       at: new Date(a.createdAt),
-      href: "/analysis",
+      href: `/doc-review?id=${a.id}`,
       status: a.status,
       violationCount: vCount,
     });

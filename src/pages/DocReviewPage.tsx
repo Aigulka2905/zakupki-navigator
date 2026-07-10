@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,22 @@ export default function DocReviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReviewResult | null>(null);
+
+  // Открытие сохранённой проверки из «Истории»: /doc-review?id=<analysisId>.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    setLoading(true);
+    apiClient.get<{ analysisResult?: ReviewResult }>(`/analysis/${id}`)
+      .then(({ data }) => {
+        if (data?.analysisResult) {
+          setResult(data.analysisResult);
+          if (data.analysisResult.mode) setMode(data.analysisResult.mode as Mode);
+        }
+      })
+      .catch(() => setError("Не удалось загрузить сохранённую проверку"))
+      .finally(() => setLoading(false));
+  }, []);
 
   const submit = async () => {
     setError(null);
