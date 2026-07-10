@@ -64,6 +64,8 @@ import {
   useLegalCheck,
   useLegalAck,
   useLegalReingest,
+  useEisStats,
+  useEisIngest,
   useAdminLogs,
   useAdminAudit,
   useSyncStatus,
@@ -572,6 +574,50 @@ function SyncCards() {
   );
 }
 
+function EisIngestCard() {
+  const { data: stats } = useEisStats();
+  const ingest = useEisIngest();
+  const [q, setQ] = useState("");
+
+  const run = () => {
+    if (q.trim().length < 3) { toast.error("Введите наименование/категорию (от 3 символов)"); return; }
+    ingest.mutate(q.trim(), {
+      onSuccess: (d) => toast.success(`Загружено ${d.ingested} контрактов из ЕИС. Всего в базе: ${d.total}`),
+      onError: (e: unknown) => toast.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось загрузить из ЕИС — проверьте доступ к zakupki.gov.ru (РФ-IP)"),
+    });
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-2">
+        <Database className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">Реестр контрактов ЕИС</h3>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Собственная база контрактов для поиска цен НМЦ (сначала ищем в ней, потом в живом ЕИС).
+        Сейчас в базе: <span className="font-medium text-foreground">{stats?.contracts ?? "—"}</span> контрактов
+        {stats?.lastUpdatedAt ? ` · обновлено ${new Date(stats.lastUpdatedAt).toLocaleDateString("ru-RU")}` : ""}.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") run(); }}
+          placeholder="Категория/наименование, напр. «кабель медный»"
+          className="h-9 text-sm"
+        />
+        <Button onClick={run} disabled={ingest.isPending} className="shrink-0 gap-1.5">
+          {ingest.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+          Загрузить из ЕИС
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        ЕИС должен быть доступен (российский IP). Несколько категорий — через запятую. Загрузка идёт до ~минуты.
+      </p>
+    </Card>
+  );
+}
+
 function ParametersTab() {
   const { data: sys, refetch, isFetching } = useSystemInfo();
   const { data: stats } = useAdminStats();
@@ -598,6 +644,8 @@ function ParametersTab() {
           <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} /> Обновить
         </Button>
       </div>
+
+      <EisIngestCard />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <InfoCard

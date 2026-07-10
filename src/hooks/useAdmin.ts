@@ -194,6 +194,24 @@ export function useLegalReingest() {
   });
 }
 
+// ── Реестр контрактов ЕИС (собственная база для НМЦ) ──
+export interface EisStats { contracts: number; lastUpdatedAt?: string | null }
+export function useEisStats() {
+  return useQuery({
+    queryKey: ["admin-eis"],
+    queryFn: () => apiClient.get<EisStats>("/admin/eis").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+export function useEisIngest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (query: string) =>
+      apiClient.post<{ ingested: number; total: number }>("/admin/eis/ingest", { query }, { timeout: 300_000 }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-eis"] }),
+  });
+}
+
 export function useResetModelLimit() {
   const qc = useQueryClient();
   return useMutation({
