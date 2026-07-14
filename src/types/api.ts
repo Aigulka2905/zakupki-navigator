@@ -58,6 +58,8 @@ export interface User {
   isOrgOwner?: boolean;
   createdAt: string;
   lastLogin: string | null;
+  /** Момент активации 2FA; null — не настроена. Секрет/backup-коды наружу не отдаются. */
+  totpEnabledAt?: string | null;
   organization?: Organization;
 }
 
@@ -194,6 +196,46 @@ export interface AuthTokens {
 export interface LoginRequest {
   email: string;
   password: string;
+  /** 6-значный TOTP либо одноразовый backup-код (XXXX-XXXX). */
+  totp?: string;
+}
+
+// ── 2FA ──────────────────────────────────────────────────────
+// Бэкенд на POST /auth/login отвечает одним из трёх вариантов (все — 200):
+//  1) AuthTokens                     — вход завершён;
+//  2) { twoFactorRequired }          — 2FA включена, нужен код (токенов нет);
+//  3) { twoFactorSetupRequired, setupToken } — admin без 2FA: обязательная настройка.
+
+export interface TwoFactorRequired {
+  twoFactorRequired: true;
+}
+
+export interface TwoFactorSetupRequired {
+  twoFactorSetupRequired: true;
+  /** Короткий (10 мин) scope-токен: пускает ТОЛЬКО на /auth/2fa/setup|verify-setup. */
+  setupToken: string;
+}
+
+export type LoginResponse = AuthTokens | TwoFactorRequired | TwoFactorSetupRequired;
+
+export const isTwoFactorRequired = (r: LoginResponse): r is TwoFactorRequired =>
+  (r as TwoFactorRequired).twoFactorRequired === true;
+
+export const isTwoFactorSetupRequired = (r: LoginResponse): r is TwoFactorSetupRequired =>
+  (r as TwoFactorSetupRequired).twoFactorSetupRequired === true;
+
+export interface TwoFactorSetupResponse {
+  /** otpauth://totp/... — из него фронт рисует QR и достаёт секрет для ручного ввода. */
+  otpauthUri: string;
+}
+
+export interface TwoFactorVerifyResponse extends AuthTokens {
+  /** Показываются РОВНО ОДИН раз — сервер хранит только их bcrypt-хэши. */
+  backupCodes: string[];
+}
+
+export interface BackupCodesResponse {
+  backupCodes: string[];
 }
 
 export interface RegisterRequest {

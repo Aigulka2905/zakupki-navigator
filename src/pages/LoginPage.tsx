@@ -3,14 +3,21 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ShieldCheck, Loader2, Eye, EyeOff, Mail, Sparkles, Building2, Users } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { ShieldCheck, Loader2, Eye, EyeOff, Mail, Sparkles, Building2, Users, KeyRound, Copy, Check, ArrowLeft } from "lucide-react";
 import type { OrgType } from "@/types/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import apiClient from "@/lib/api-client";
 import { tokenStorage } from "@/lib/auth";
 import { queryClient } from "@/lib/query-client";
-import type { AuthTokens } from "@/types/api";
+import { twoFactorApi, secretFromOtpauthUri } from "@/lib/two-factor";
+import {
+  isTwoFactorRequired,
+  isTwoFactorSetupRequired,
+  type AuthTokens,
+  type LoginResponse,
+} from "@/types/api";
 
 // ── Schemas ───────────────────────────────────────────────────
 
@@ -118,27 +125,335 @@ const GlassInput = forwardRef<
 ));
 GlassInput.displayName = "GlassInput";
 
-// ── Login form ────────────────────────────────────────────────
+// ── 2FA helpers ───────────────────────────────────────────────
+
+const errText = (err: unknown, fallback: string) =>
+  (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? fallback;
+
+const primaryBtn =
+  "relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-200 transition-all hover:from-violet-600 hover:to-indigo-600 hover:shadow-violet-300 disabled:opacity-60";
+
+function ErrorBanner({ message }: { message: string | null }) {
+  return message ? (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm text-rose-600">
+      {message}
+    </div>
+  ) : null;
+}
+
+/** Поле второго фактора: 6-значный TOTP либо backup-код XXXX-XXXX. */
+function CodeField({
+  value, onChange, autoFocus, placeholder = "123456",
+}: { value: string; onChange: (v: string) => void; autoFocus?: boolean; placeholder?: string }) {
+  return (
+    <GlassInput
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      autoFocus={autoFocus}
+      autoComplete="one-time-code"
+      inputMode="text"
+      maxLength={9}
+      placeholder={placeholder}
+      className="text-center font-mono text-lg tracking-[0.3em]"
+    />
+  );
+}
+
+// ── Шаг: ввод кода (2FA уже включена) ─────────────────────────
+
+function TwoFactorCodeStep({
+  creds, onAuthenticated, onBack,
+}: {
+  creds: LoginValues;
+  onAuthenticated: (t: AuthTokens) => void;
+  onBack: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      // Повторяем логин, добавив второй фактор — бэкенд выдаёт токены только теперь.
+      const { data } = await apiClient.post<LoginResponse>("/auth/login", { ...creds, totp: code.trim() });
+      if ("accessToken" in data) return onAuthenticated(data);
+      setError("Не удалось войти. Попробуйте ещё раз.");
+    } catch (err) {
+      setError(errText(err, "Неверный код"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <div className="flex flex-col items-center gap-2 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg">
+          <KeyRound className="h-6 w-6 text-white" />
+        </div>
+        <h2 className="text-base font-semibold text-slate-800">Подтвердите вход</h2>
+        <p className="text-sm text-slate-500">
+          Введите 6-значный код из приложения-аутентификатора
+          <br />или один из ваших backup-кодов.
+        </p>
+      </div>
+
+      <CodeField value={code} onChange={setCode} autoFocus />
+
+      <ErrorBanner message={error} />
+
+      <button type="submit" disabled={busy || code.trim().length < 6} className={primaryBtn}>
+        {busy ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Проверка...
+          </span>
+        ) : "Подтвердить"}
+      </button>
+
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex w-full items-center justify-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Вернуться ко входу
+      </button>
+    </form>
+  );
+}
+
+// ── Шаг: обязательная настройка 2FA (admin без 2FA) ───────────
+
+function TwoFactorSetupStep({
+  otpauthUri, setupToken, onEnabled,
+}: {
+  otpauthUri: string;
+  setupToken: string;
+  onEnabled: (t: AuthTokens, backupCodes: string[]) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const secret = secretFromOtpauthUri(otpauthUri);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await twoFactorApi.verifySetup(setupToken, code.trim());
+      onEnabled(data, data.backupCodes);
+    } catch (err) {
+      setError(errText(err, "Неверный код. Проверьте время на устройстве."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <div className="flex flex-col items-center gap-2 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg">
+          <ShieldCheck className="h-6 w-6 text-white" />
+        </div>
+        <h2 className="text-base font-semibold text-slate-800">Настройте двухфакторную аутентификацию</h2>
+        <p className="text-sm text-slate-500">
+          Для учётной записи администратора 2FA обязательна.
+          <br />Отсканируйте QR-код в Google Authenticator, Aegis или 1Password.
+        </p>
+      </div>
+
+      {/* QR рисуется на фронте из otpauth-URI — секрет не покидает эту страницу. */}
+      <div className="flex justify-center">
+        <div className="rounded-2xl border border-white/60 bg-white p-3 shadow-sm">
+          <QRCodeSVG value={otpauthUri} size={168} level="M" />
+        </div>
+      </div>
+
+      {secret && (
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => setShowSecret((v) => !v)}
+            className="text-xs text-violet-600 transition-colors hover:text-violet-800"
+          >
+            {showSecret ? "Скрыть ключ" : "QR не сканируется? Ввести ключ вручную"}
+          </button>
+          {showSecret && (
+            <p className="mt-2 select-all break-all rounded-xl border border-white/50 bg-white/60 px-3 py-2 font-mono text-xs text-slate-600">
+              {secret}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <Label className="text-sm font-medium text-slate-700">Код из приложения</Label>
+        <CodeField value={code} onChange={setCode} />
+      </div>
+
+      <ErrorBanner message={error} />
+
+      <button type="submit" disabled={busy || code.trim().length !== 6} className={primaryBtn}>
+        {busy ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Включаем...
+          </span>
+        ) : "Включить 2FA"}
+      </button>
+    </form>
+  );
+}
+
+// ── Шаг: backup-коды (показываются РОВНО один раз) ────────────
+
+function BackupCodesStep({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [ack, setAck] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(codes.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* буфер обмена недоступен — коды всё равно видны на экране */
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg">
+          <Check className="h-6 w-6 text-white" />
+        </div>
+        <h2 className="text-base font-semibold text-slate-800">2FA включена</h2>
+        <p className="text-sm text-slate-500">
+          Сохраните backup-коды. Каждый работает <span className="font-medium">один раз</span> и
+          заменяет код из приложения, если вы потеряете доступ к нему.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-2.5 text-xs text-amber-700">
+        Коды показываются только сейчас — на сервере хранятся лишь их хэши. Повторно посмотреть их нельзя.
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/50 bg-white/60 p-3">
+        {codes.map((c) => (
+          <code key={c} className="select-all text-center font-mono text-sm tracking-wider text-slate-700">
+            {c}
+          </code>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={copy}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/50 bg-white/60 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-white/80"
+      >
+        {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+        {copied ? "Скопировано" : "Скопировать все"}
+      </button>
+
+      <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-600">
+        <input
+          type="checkbox"
+          checked={ack}
+          onChange={(e) => setAck(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-400"
+        />
+        Я сохранил коды в надёжном месте
+      </label>
+
+      <button type="button" disabled={!ack} onClick={onDone} className={primaryBtn}>
+        Продолжить
+      </button>
+    </div>
+  );
+}
+
+// ── Login form (state machine) ────────────────────────────────
+
+type LoginStep =
+  | { kind: "credentials" }
+  | { kind: "code"; creds: LoginValues }
+  | { kind: "setup"; setupToken: string; otpauthUri: string }
+  | { kind: "backup"; codes: string[] };
 
 function LoginForm() {
   const navigate = useNavigate();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [step, setStep] = useState<LoginStep>({ kind: "credentials" });
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
   });
 
+  // Единая точка завершения входа: кладём access-токен и уходим в приложение.
+  const finish = (tokens: AuthTokens) => {
+    tokenStorage.setTokens(tokens.accessToken);
+    queryClient.clear();
+    navigate("/", { replace: true });
+  };
+
   const onSubmit = async (values: LoginValues) => {
     setServerError(null);
     try {
-      const { data } = await apiClient.post<AuthTokens>("/auth/login", values);
-      tokenStorage.setTokens(data.accessToken);
-      queryClient.clear();
-      navigate("/", { replace: true });
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setServerError(msg ?? "Неверный email или пароль");
+      const { data } = await apiClient.post<LoginResponse>("/auth/login", values);
+
+      // 2FA включена — запрашиваем код (токенов сервер не выдал).
+      if (isTwoFactorRequired(data)) {
+        setStep({ kind: "code", creds: values });
+        return;
+      }
+
+      // admin без 2FA — обязательная настройка. setupToken живёт только в стейте
+      // (в localStorage его класть нельзя: ProtectedRoute счёл бы это сессией).
+      if (isTwoFactorSetupRequired(data)) {
+        const { otpauthUri } = await twoFactorApi.setup(data.setupToken);
+        setStep({ kind: "setup", setupToken: data.setupToken, otpauthUri });
+        return;
+      }
+
+      finish(data);
+    } catch (err) {
+      setServerError(errText(err, "Неверный email или пароль"));
     }
   };
+
+  if (step.kind === "code") {
+    return (
+      <TwoFactorCodeStep
+        creds={step.creds}
+        onAuthenticated={finish}
+        onBack={() => setStep({ kind: "credentials" })}
+      />
+    );
+  }
+
+  if (step.kind === "setup") {
+    return (
+      <TwoFactorSetupStep
+        otpauthUri={step.otpauthUri}
+        setupToken={step.setupToken}
+        onEnabled={(tokens, codes) => {
+          // Токен уже валиден: сохраняем сессию, но сперва показываем backup-коды.
+          tokenStorage.setTokens(tokens.accessToken);
+          queryClient.clear();
+          setStep({ kind: "backup", codes });
+        }}
+      />
+    );
+  }
+
+  if (step.kind === "backup") {
+    return <BackupCodesStep codes={step.codes} onDone={() => navigate("/", { replace: true })} />;
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -169,17 +484,9 @@ function LoginForm() {
         />
       </div>
 
-      {serverError && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm text-rose-600">
-          {serverError}
-        </div>
-      )}
+      <ErrorBanner message={serverError} />
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-200 transition-all hover:from-violet-600 hover:to-indigo-600 hover:shadow-violet-300 disabled:opacity-60"
-      >
+      <button type="submit" disabled={isSubmitting} className={primaryBtn}>
         {isSubmitting ? (
           <span className="flex items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />

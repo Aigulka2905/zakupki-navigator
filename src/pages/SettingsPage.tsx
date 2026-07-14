@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Reveal } from "@/components/Reveal";
+import { TwoFactorCard } from "@/components/TwoFactorCard";
 
 
 const SettingsPage = () => {
@@ -66,6 +67,11 @@ const SettingsPage = () => {
               </div>
             </div>
           </Card>
+        </Reveal>
+
+        {/* Двухфакторная аутентификация */}
+        <Reveal direction="up" delay={0.04}>
+          <TwoFactorCard />
         </Reveal>
 
         {/* Организация */}
