@@ -25,6 +25,14 @@ export default defineConfig(({ mode }) => ({
         secure: false,
         ws: true, // Поддержка WebSocket для real-time уведомлений
       },
+      // WS-эндпоинт лежит на /ws, ВНЕ /api — без отдельного правила Vite его не
+      // проксирует, и уведомления в dev молча не работают. Тот же target, что у /api.
+      '/ws': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:4002',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
     },
   },
   preview: {

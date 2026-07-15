@@ -312,25 +312,39 @@ function UsersTab() {
 
                 {/* Role select */}
                 <TableCell>
-                  <Select
-                    value={user.role}
-                    onValueChange={(role) => updateRole({ userId: user.id, role })}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        "h-7 w-36 text-xs border",
-                        ROLE_COLORS[user.role as UserRole],
-                        "dark:bg-transparent",
-                      )}
+                  {/* Роль admin API-неуправляема (бэкенд SEC-16: 403 на смену
+                      роли admin-таргету; role:'admin' отклоняется с 400), и свою
+                      роль менять нельзя (400). В этих случаях показываем статичный
+                      бейдж, а не селект — иначе клик давал бы заведомую ошибку.
+                      Селект предлагает только specialist/viewer (roleUpdateSchema). */}
+                  {(isAdmin || isSelf) ? (
+                    <Badge
+                      variant="outline"
+                      className={cn("h-7 w-36 justify-center text-xs", ROLE_COLORS[user.role as UserRole])}
+                      title={isSelf ? "Нельзя изменить собственную роль" : "Роль администратора управляется только через seed/БД"}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Администратор</SelectItem>
-                      <SelectItem value="specialist">Специалист</SelectItem>
-                      <SelectItem value="viewer">Наблюдатель</SelectItem>
-                    </SelectContent>
-                  </Select>
+                      {ROLE_LABELS[user.role as UserRole]}
+                    </Badge>
+                  ) : (
+                    <Select
+                      value={user.role}
+                      onValueChange={(role) => updateRole({ userId: user.id, role })}
+                    >
+                      <SelectTrigger
+                        className={cn(
+                          "h-7 w-36 text-xs border",
+                          ROLE_COLORS[user.role as UserRole],
+                          "dark:bg-transparent",
+                        )}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="specialist">Специалист</SelectItem>
+                        <SelectItem value="viewer">Наблюдатель</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </TableCell>
 
                 {/* Org type badge */}

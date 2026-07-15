@@ -1,8 +1,18 @@
 import { tokenStorage } from './auth';
 
-const WS_BASE = import.meta.env.VITE_WS_URL ?? (
-  window.location.protocol === 'https:' ? 'wss://' : 'ws://'
-) + (import.meta.env.VITE_API_HOST ?? 'localhost:3000');
+// Приоритет: VITE_WS_URL (полный override) → VITE_API_HOST (только хост) →
+// window.location.host (тот же origin, что и страница).
+//
+// Раньше дефолт был захардкожен на localhost:3000 — и в dev это не работало
+// вовсе: абсолютный URL шёл мимо Vite-прокси, а :3000 не слушал ни host-run
+// бэкенд (:4002), ни docker (порт наружу не публикуется). Дефолт от
+// window.location.host решает это без env-переменных: в dev это localhost:5173,
+// и Vite-прокси (см. vite.config.ts) заворачивает /ws на бэкенд; в проде это
+// боевой домен, где nginx проксирует /ws (хендшейк 101 подтверждён).
+const WS_PROTO = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const WS_BASE =
+  import.meta.env.VITE_WS_URL ??
+  WS_PROTO + (import.meta.env.VITE_API_HOST ?? window.location.host);
 
 type WSMessage = { type: string; [key: string]: unknown };
 type MessageHandler = (msg: WSMessage) => void;
