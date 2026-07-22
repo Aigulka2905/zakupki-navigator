@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { openExternal } from "@/lib/url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -503,6 +504,57 @@ const BillingPage = () => {
     queryFn: fetchPayments,
     staleTime: 30_000,
   } as Parameters<typeof useQuery>[0]);
+
+  // Авто-зачисление при возврате с оплаты. ЮKassa после успешной оплаты
+  // перенаправляет на /billing?status=success. Раньше баланс обновлялся только
+  // после ручного «Обновить» (или прихода вебхука, который может отстать/не
+  // дойти в dev). Теперь при возврате сразу тянем статус платежа из API ЮKassa
+  // (тот же идемпотентный syncPayment) и зачисляем баланс. Короткий поллинг —
+  // на случай, если у ЮKassa расчёт занял пару секунд.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoSyncStarted = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("status") !== "success" || autoSyncStarted.current) return;
+    autoSyncStarted.current = true;
+
+    // Убираем ?status из URL, чтобы обновление страницы не запускало заново.
+    const next = new URLSearchParams(searchParams);
+    next.delete("status");
+    setSearchParams(next, { replace: true });
+
+    const loading = toast.loading("Подтверждаем оплату…");
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      let credited = false;
+      let stillPending = false;
+      try {
+        const list = await fetchPayments(); // свежий список, не из кэша
+        for (const p of list.filter((x) => x.status === "pending")) {
+          try {
+            const r = await syncPayment(p.id);
+            if (r.status === "succeeded") credited = true;
+            else if (r.status === "pending" || r.status === "processing") stillPending = true;
+          } catch { stillPending = true; }
+        }
+      } catch { stillPending = true; }
+
+      if (credited) {
+        qc.invalidateQueries({ queryKey: ["billing-usage"] });
+        qc.invalidateQueries({ queryKey: ["billing-payments"] });
+        toast.success("Платёж прошёл — баланс пополнен", { id: loading });
+        return;
+      }
+      if (stillPending && attempts < 5) {
+        setTimeout(poll, 2500); // до ~12,5 c
+        return;
+      }
+      // Не подтвердилось за окно поллинга — не пугаем ошибкой, обновляем историю.
+      qc.invalidateQueries({ queryKey: ["billing-payments"] });
+      toast.dismiss(loading);
+    };
+    poll();
+  }, [searchParams, setSearchParams, qc]);
 
   const { mutate: doTopup, isLoading: topupPending } = useMutation({
     mutationFn: createTopup,
