@@ -37,6 +37,7 @@ const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const AdminPage = lazy(() => import("./pages/AdminPage.tsx"));
 const NationalRegimePage = lazy(() => import("./pages/NationalRegimePage.tsx"));
+const SubscriptionsPage = lazy(() => import("./pages/SubscriptionsPage.tsx"));
 
 function RouteFallback() {
   return (
@@ -109,6 +110,7 @@ const App = () => (
           <Route path="/check-supplier" element={<ProtectedRoute><CheckSupplierPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
           <Route path="/national-regime" element={<ProtectedRoute><NationalRegimePage /></ProtectedRoute>} />
+          <Route path="/subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
