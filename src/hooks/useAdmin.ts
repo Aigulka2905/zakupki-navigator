@@ -194,6 +194,26 @@ export function useLegalReingest() {
   });
 }
 
+// Добавить НОВЫЙ закон в корпус (файл + метаданные). Обновление существующего — useLegalReingest.
+export function useLegalAdd() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { file: File; law: string; name?: string; url?: string; ranges?: string }) => {
+      const fd = new FormData();
+      fd.append("file", payload.file);
+      fd.append("law", payload.law);
+      if (payload.name) fd.append("name", payload.name);
+      if (payload.url) fd.append("url", payload.url);
+      if (payload.ranges) fd.append("ranges", payload.ranges);
+      return apiClient.post("/admin/legal", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 600_000,
+      }).then((r) => r.data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-legal"] }),
+  });
+}
+
 // ── Реестр контрактов ЕИС (собственная база для НМЦ) ──
 export interface EisStats { contracts: number; lastUpdatedAt?: string | null }
 export function useEisStats() {

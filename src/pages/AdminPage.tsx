@@ -46,6 +46,7 @@ import {
   Database,
   Scale,
   Upload,
+  Plus,
   AlertTriangle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ import {
   useLegalCheck,
   useLegalAck,
   useLegalReingest,
+  useLegalAdd,
   useEisStats,
   useEisIngest,
   useAdminLogs,
@@ -841,6 +843,31 @@ function LegalRow({ doc }: { doc: LegalDocument }) {
 function LegalCorpusTab() {
   const { data: docs = [], isLoading } = useLegalCorpus();
   const check = useLegalCheck();
+  const add = useLegalAdd();
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [law, setLaw] = useState("");
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [ranges, setRanges] = useState("");
+
+  const resetForm = () => { setFile(null); setLaw(""); setName(""); setUrl(""); setRanges(""); setShowAdd(false); };
+
+  const onAdd = () => {
+    if (!law.trim()) { toast.error("Укажите закон (например, «44-ФЗ»)"); return; }
+    if (!file) { toast.error("Приложите файл с текстом закона (.pdf/.txt/.docx)"); return; }
+    add.mutate(
+      { file, law: law.trim(), name: name.trim() || undefined, url: url.trim() || undefined, ranges: ranges.trim() || undefined },
+      {
+        onSuccess: (r: { revision?: string; articles?: number }) => {
+          toast.success(`Добавлено: ${law.trim()} — редакция ${r.revision ?? "—"}, статей ${r.articles ?? "—"}`);
+          resetForm();
+        },
+        onError: (err: unknown) => toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось добавить документ"),
+      },
+    );
+  };
 
   if (isLoading) {
     return <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">Загрузка...</div>;
@@ -848,20 +875,67 @@ function LegalCorpusTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground max-w-2xl">
           Нормативные документы, на которые ИИ ссылается при проверках. Раз в неделю система сверяет
           редакции с первоисточником и уведомляет об изменениях — тогда загрузите сюда обновлённый текст.
         </p>
-        <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs shrink-0"
-          disabled={check.isPending}
-          onClick={() => check.mutate(undefined, {
-            onSuccess: () => toast.success("Проверка выполнена"),
-            onError: () => toast.error("Не удалось проверить обновления"),
-          })}>
-          <RefreshCw className={cn("h-3.5 w-3.5", check.isPending && "animate-spin")} /> Проверить обновления
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowAdd((v) => !v)}>
+            <Plus className="h-3.5 w-3.5" /> Добавить документ
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
+            disabled={check.isPending}
+            onClick={() => check.mutate(undefined, {
+              onSuccess: () => toast.success("Проверка выполнена"),
+              onError: () => toast.error("Не удалось проверить обновления"),
+            })}>
+            <RefreshCw className={cn("h-3.5 w-3.5", check.isPending && "animate-spin")} /> Проверить обновления
+          </Button>
+        </div>
       </div>
+
+      {showAdd && (
+        <div className="rounded-lg border border-border/60 dark:border-white/[0.06] p-4 space-y-3">
+          <div className="text-sm font-medium">Новый документ в правовой корпус</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] text-muted-foreground">Закон *</label>
+              <Input value={law} onChange={(e) => setLaw(e.target.value)} placeholder="напр. 44-ФЗ" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] text-muted-foreground">Название</label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. О контрактной системе…" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] text-muted-foreground">URL первоисточника</label>
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] text-muted-foreground">Диапазоны статей (опционально)</label>
+              <Input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="напр. 30-50,93" className="h-8 text-sm" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" id="legal-add-file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <Button asChild size="sm" variant="outline" className="h-8 gap-1 text-xs">
+              <label htmlFor="legal-add-file" className="cursor-pointer">
+                <Upload className="h-3.5 w-3.5" /> {file ? file.name : "Выбрать файл (.pdf/.txt/.docx)"}
+              </label>
+            </Button>
+            <div className="flex-1" />
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={resetForm} disabled={add.isPending}>Отмена</Button>
+            <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onAdd} disabled={add.isPending}>
+              {add.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Добавить
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Из файла извлекается текст и распознаются статьи (по заголовкам «Статья N»). Добавляется и в
+            ИИ-корпус (заземление проверок), и в этот реестр. Обновлять потом — кнопкой «Загрузить обновление» у строки.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
         <Table>
