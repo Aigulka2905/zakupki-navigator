@@ -7,6 +7,8 @@
 # Деплой на сервере:   make pull && make prod-up   (или ./docker/scripts/deploy.sh)
 # ─────────────────────────────────────────────────────────────
 
+name: zakupki-frontend
+
 services:
   frontend:
     build:
@@ -74,7 +76,10 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
+      # 127.0.0.1, а не localhost: nginx слушает "listen 80" (только IPv4),
+      # а localhost внутри контейнера резолвится в ::1 → connection refused,
+      # из-за чего контейнер вечно висел unhealthy при рабочем nginx.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
