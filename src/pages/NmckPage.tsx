@@ -29,25 +29,68 @@ const DEFAULT_VAT = 20;
 const VAT_OPTIONS = [20, 10, 0];
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—");
 const floor2 = (x: number) => Math.floor(x * 100 + 1e-6) / 100;
+const toComparable = (raw: number, vr: number | null, target: number) =>
+  vr != null && Number.isFinite(vr) && vr !== target ? (raw / (1 + vr / 100)) * (1 + target / 100) : raw;
+const priceVat = (x: Price): number | null => (x.vatRate === "" || x.vatRate == null ? null : Number(x.vatRate));
+const posVat = (p: Position) => (Number.isFinite(Number(p.vatRate)) ? Number(p.vatRate) : DEFAULT_VAT);
+
+// Коэф. вариации по набору сопоставимых цен (для предупреждений при подборе из ЕИС).
+function cvOfPrices(prices: Price[], targetVat: number) {
+  const vals = prices
+    .filter((x) => !x.excluded)
+    .map((x) => ({ raw: Number(x.unitPrice), c: toComparable(Number(x.unitPrice), priceVat(x), targetVat) }))
+    .filter((v) => Number.isFinite(v.raw) && v.raw > 0);
+  const n = vals.length;
+  if (n < 2) return { cv: 0, n };
+  const mean = vals.reduce((s, v) => s + v.c, 0) / n;
+  if (mean <= 0) return { cv: 0, n };
+  const variance = vals.reduce((s, v) => s + (v.c - mean) ** 2, 0) / (n - 1);
+  return { cv: (Math.sqrt(variance) / mean) * 100, n };
+}
+
+// Приведение к однородности (зеркалит backend homogenizePrices): пошагово помечает
+// excluded самую отклоняющуюся цену, пока V ≤ 33% и активных источников ≥ MIN_SOURCES.
+function homogenize(prices: Price[], targetVat: number): Price[] {
+  const src = prices.map((p) => ({ ...p, excluded: false }));
+  const items = src
+    .map((p, i) => ({ i, raw: Number(p.unitPrice), c: toComparable(Number(p.unitPrice), priceVat(p), targetVat) }))
+    .filter((x) => Number.isFinite(x.raw) && x.raw > 0);
+  const excluded = new Set<number>();
+  const active = () => items.filter((x) => !excluded.has(x.i));
+  const cvOf = () => {
+    const a = active();
+    const n = a.length;
+    if (n < 2) return { cv: 0, n, mean: a[0]?.c ?? 0 };
+    const mean = a.reduce((s, x) => s + x.c, 0) / n;
+    if (mean <= 0) return { cv: 0, n, mean };
+    const variance = a.reduce((s, x) => s + (x.c - mean) ** 2, 0) / (n - 1);
+    return { cv: (Math.sqrt(variance) / mean) * 100, n, mean };
+  };
+  for (;;) {
+    const { cv, n, mean } = cvOf();
+    if (cv <= CV_THRESHOLD || n <= MIN_SOURCES) break;
+    let far: (typeof items)[number] | null = null, dist = -1;
+    for (const x of active()) { const d = Math.abs(x.c - mean); if (d > dist) { dist = d; far = x; } }
+    if (!far) break;
+    excluded.add(far.i);
+  }
+  excluded.forEach((i) => { src[i].excluded = true; });
+  return src;
+}
 
 // Локальный расчёт для живого превью (сервер — источник истины при сохранении).
 // Зеркалит backend/src/utils/nmck.js: приведение к базе НДС позиции, СКО σ (n−1),
-// округление денежных итогов ВНИЗ до сотых (форма Приказа №567).
+// округление денежных итогов ВНИЗ до сотых (форма Приказа №567). Исключённые
+// (excluded) цены в расчёте не участвуют.
 function compute(positions: Position[]) {
   let nmck = 0, cvMax = 0;
   const rows = positions.map((p) => {
-    const targetVat = Number.isFinite(Number(p.vatRate)) ? Number(p.vatRate) : DEFAULT_VAT;
-    const prices = p.prices
-      .map((x) => {
-        const raw = Number(x.unitPrice);
-        const vr = x.vatRate === "" || x.vatRate == null ? null : Number(x.vatRate);
-        const comparable =
-          vr != null && Number.isFinite(vr) && vr !== targetVat
-            ? (raw / (1 + vr / 100)) * (1 + targetVat / 100)
-            : raw;
-        return { raw, comparable };
-      })
+    const targetVat = posVat(p);
+    const all = p.prices
+      .map((x) => ({ raw: Number(x.unitPrice), comparable: toComparable(Number(x.unitPrice), priceVat(x), targetVat), excluded: !!x.excluded }))
       .filter((v) => Number.isFinite(v.raw) && v.raw > 0);
+    const prices = all.filter((v) => !v.excluded);
+    const excludedCount = all.length - prices.length;
     const n = prices.length;
     let avg = 0, std = 0, cv = 0;
     if (n > 0) {
@@ -62,7 +105,7 @@ function compute(positions: Position[]) {
     const unitPriceRounded = floor2(avg);
     const sum = floor2(unitPriceRounded * qty); // НМЦК с учётом округления цены за ед.
     nmck += sum; cvMax = Math.max(cvMax, cv);
-    return { avg, std, cv, sum, n, targetVat };
+    return { avg, std, cv, sum, n, excludedCount, targetVat };
   });
   return { rows, nmck: floor2(nmck), cvMax };
 }
@@ -139,6 +182,9 @@ export default function NmckPage() {
   const delPrice = (i: number, j: number) => upd((p) => { p[i].prices.splice(j, 1); return p; });
   const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", vatRate: DEFAULT_VAT, prices: [{ source: "", unitPrice: "", vatRate: DEFAULT_VAT }] }]);
   const delPosition = (i: number) => upd((p) => p.filter((_, j) => j !== i));
+  const homogenizePos = (i: number) => upd((p) => { p[i].prices = homogenize(p[i].prices, posVat(p[i])); return p; });
+  const resetExclusions = (i: number) => upd((p) => { p[i].prices = p[i].prices.map((x) => ({ ...x, excluded: false })); return p; });
+  const toggleExcluded = (i: number, j: number) => upd((p) => { p[i].prices[j].excluded = !p[i].prices[j].excluded; return p; });
 
   const save = async () => {
     if (!calc) return;
@@ -226,6 +272,10 @@ export default function NmckPage() {
       vatRate: DEFAULT_VAT,
     }));
     upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, vatRate: DEFAULT_VAT, prices }]);
+    const { cv, n } = cvOfPrices(prices, DEFAULT_VAT);
+    if (n >= 2 && cv > CV_THRESHOLD) {
+      setError(`Подобранные цены неоднородны (V=${fmt(cv)}% > ${CV_THRESHOLD}%) — вероятно, контракты разного масштаба. Нажмите «Привести к однородности» у позиции либо уточните запрос (напр. конкретная модель/ед. изм.).`);
+    } else setError(null);
     setEisItems(null); setEisSel(new Set()); setEisQuery("");
   };
 
@@ -381,9 +431,9 @@ export default function NmckPage() {
                         </div>
                         <div className="mt-2 space-y-1.5">
                           {p.prices.map((pr, j) => (
-                            <div key={j} className="flex items-center gap-2">
-                              <Input value={pr.source} onChange={(e) => setPrice(i, j, "source", e.target.value)} placeholder="Источник (КП)" className="h-8 flex-1 text-sm" />
-                              <Input value={String(pr.unitPrice)} onChange={(e) => setPrice(i, j, "unitPrice", e.target.value)} placeholder="цена за ед." type="number" className="h-8 w-32 text-sm" />
+                            <div key={j} className={`flex items-center gap-2 ${pr.excluded ? "opacity-55" : ""}`}>
+                              <Input value={pr.source} onChange={(e) => setPrice(i, j, "source", e.target.value)} placeholder="Источник (КП)" className={`h-8 flex-1 text-sm ${pr.excluded ? "line-through" : ""}`} />
+                              <Input value={String(pr.unitPrice)} onChange={(e) => setPrice(i, j, "unitPrice", e.target.value)} placeholder="цена за ед." type="number" className={`h-8 w-32 text-sm ${pr.excluded ? "line-through" : ""}`} />
                               <select
                                 value={String(pr.vatRate ?? DEFAULT_VAT)}
                                 onChange={(e) => setPrice(i, j, "vatRate", e.target.value)}
@@ -391,6 +441,10 @@ export default function NmckPage() {
                                 className="h-8 rounded-md border border-input bg-background px-1.5 text-xs no-print">
                                 {VAT_OPTIONS.map((v) => <option key={v} value={v}>НДС {v}%</option>)}
                               </select>
+                              <Button size="sm" variant="ghost" className={`h-7 shrink-0 px-1.5 text-[11px] no-print ${pr.excluded ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
+                                title={pr.excluded ? "Вернуть в расчёт" : "Исключить как аномальную цену"} onClick={() => toggleExcluded(i, j)}>
+                                {pr.excluded ? "вернуть" : "искл."}
+                              </Button>
                               <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPrice(i, j)}><XCircle className="h-3.5 w-3.5" /></Button>
                             </div>
                           ))}
@@ -402,7 +456,23 @@ export default function NmckPage() {
                           <span className={r.cv > CV_THRESHOLD ? "text-destructive font-medium" : ""}>Коэф. вариации: {fmt(r.cv)}% {r.cv > CV_THRESHOLD ? "⚠ >33%" : r.n >= 2 ? "✓" : ""}</span>
                           <span>Сумма: <b>{fmt(r.sum)} ₽</b></span>
                           <span className={r.n > 0 && r.n < MIN_SOURCES ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>источников: {r.n}{r.n > 0 && r.n < MIN_SOURCES ? ` (нужно ≥${MIN_SOURCES})` : ""}</span>
+                          {r.excludedCount > 0 && <span className="text-muted-foreground">исключено: {r.excludedCount}</span>}
                         </div>
+                        {(r.cv > CV_THRESHOLD || r.excludedCount > 0) && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 no-print">
+                            {r.cv > CV_THRESHOLD && r.n > MIN_SOURCES && (
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => homogenizePos(i)}>
+                                <FileCheck2 className="mr-1 h-3.5 w-3.5" />Привести к однородности (V≤{CV_THRESHOLD}%)
+                              </Button>
+                            )}
+                            {r.excludedCount > 0 && (
+                              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={() => resetExclusions(i)}>Вернуть все исключённые</Button>
+                            )}
+                            {r.cv > CV_THRESHOLD && r.n <= MIN_SOURCES && (
+                              <span className="text-[11px] text-amber-600 dark:text-amber-400">Нельзя привести к V≤{CV_THRESHOLD}% без падения ниже {MIN_SOURCES} источников — добавьте сопоставимые цены.</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
