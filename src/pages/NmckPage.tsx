@@ -9,8 +9,8 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 
-interface Price { source: string; unitPrice: number | string; }
-interface Position { name: string; unit: string; quantity: number | string; prices: Price[]; }
+interface Price { source: string; unitPrice: number | string; vatRate?: number | string; }
+interface Position { name: string; unit: string; quantity: number | string; vatRate?: number | string; prices: Price[]; }
 interface Calc {
   id: string; title: string; status: "processing" | "completed" | "failed";
   positions?: Position[]; nmck?: number | null; cvMax?: number | null;
@@ -25,28 +25,46 @@ interface EisItem {
 
 const CV_THRESHOLD = 33;
 const MIN_SOURCES = 3;
+const DEFAULT_VAT = 20;
+const VAT_OPTIONS = [20, 10, 0];
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—");
+const floor2 = (x: number) => Math.floor(x * 100 + 1e-6) / 100;
 
 // Локальный расчёт для живого превью (сервер — источник истины при сохранении).
+// Зеркалит backend/src/utils/nmck.js: приведение к базе НДС позиции, СКО σ (n−1),
+// округление денежных итогов ВНИЗ до сотых (форма Приказа №567).
 function compute(positions: Position[]) {
   let nmck = 0, cvMax = 0;
   const rows = positions.map((p) => {
-    const prices = p.prices.map((x) => Number(x.unitPrice)).filter((v) => Number.isFinite(v) && v > 0);
+    const targetVat = Number.isFinite(Number(p.vatRate)) ? Number(p.vatRate) : DEFAULT_VAT;
+    const prices = p.prices
+      .map((x) => {
+        const raw = Number(x.unitPrice);
+        const vr = x.vatRate === "" || x.vatRate == null ? null : Number(x.vatRate);
+        const comparable =
+          vr != null && Number.isFinite(vr) && vr !== targetVat
+            ? (raw / (1 + vr / 100)) * (1 + targetVat / 100)
+            : raw;
+        return { raw, comparable };
+      })
+      .filter((v) => Number.isFinite(v.raw) && v.raw > 0);
     const n = prices.length;
-    let avg = 0, cv = 0;
+    let avg = 0, std = 0, cv = 0;
     if (n > 0) {
-      avg = prices.reduce((s, v) => s + v, 0) / n;
+      avg = prices.reduce((s, v) => s + v.comparable, 0) / n;
       if (n >= 2 && avg > 0) {
-        const variance = prices.reduce((s, v) => s + (v - avg) ** 2, 0) / (n - 1);
-        cv = (Math.sqrt(variance) / avg) * 100;
+        const variance = prices.reduce((s, v) => s + (v.comparable - avg) ** 2, 0) / (n - 1);
+        std = Math.sqrt(variance);
+        cv = (std / avg) * 100;
       }
     }
     const qty = Number(p.quantity) || 0;
-    const sum = avg * qty;
+    const unitPriceRounded = floor2(avg);
+    const sum = floor2(unitPriceRounded * qty); // НМЦК с учётом округления цены за ед.
     nmck += sum; cvMax = Math.max(cvMax, cv);
-    return { avg, cv, sum, n };
+    return { avg, std, cv, sum, n, targetVat };
   });
-  return { rows, nmck, cvMax };
+  return { rows, nmck: floor2(nmck), cvMax };
 }
 
 const PRINT_CSS = `
@@ -117,9 +135,9 @@ export default function NmckPage() {
   const upd = (fn: (p: Position[]) => Position[]) => setPositions((prev) => fn(prev.map((x) => ({ ...x, prices: [...x.prices] }))));
   const setField = (i: number, k: keyof Position, v: string) => upd((p) => { (p[i] as Record<string, unknown>)[k] = v; return p; });
   const setPrice = (i: number, j: number, k: keyof Price, v: string) => upd((p) => { (p[i].prices[j] as Record<string, unknown>)[k] = v; return p; });
-  const addPrice = (i: number) => upd((p) => { p[i].prices.push({ source: "", unitPrice: "" }); return p; });
+  const addPrice = (i: number) => upd((p) => { p[i].prices.push({ source: "", unitPrice: "", vatRate: DEFAULT_VAT }); return p; });
   const delPrice = (i: number, j: number) => upd((p) => { p[i].prices.splice(j, 1); return p; });
-  const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", prices: [{ source: "", unitPrice: "" }] }]);
+  const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", vatRate: DEFAULT_VAT, prices: [{ source: "", unitPrice: "", vatRate: DEFAULT_VAT }] }]);
   const delPosition = (i: number) => upd((p) => p.filter((_, j) => j !== i));
 
   const save = async () => {
@@ -143,6 +161,24 @@ export default function NmckPage() {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error ?? "Не удалось сформировать обоснование");
     } finally { setJustifying(false); }
+  };
+
+  const [xlsxLoading, setXlsxLoading] = useState(false);
+  const downloadXlsx = async () => {
+    if (!calc) return;
+    setXlsxLoading(true); setError(null);
+    try {
+      await apiClient.put(`/nmck/${calc.id}`, { title: calc.title, positions }); // сохраняем правки перед выгрузкой
+      const res = await apiClient.get(`/nmck/${calc.id}/xlsx`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(calc.title || "nmck").replace(/[^\p{L}\p{N}\-_ ]/gu, "").trim().slice(0, 60) || "nmck"}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Не удалось сформировать .xlsx");
+    } finally { setXlsxLoading(false); }
   };
 
   const createEmpty = async () => {
@@ -187,8 +223,9 @@ export default function NmckPage() {
     const prices: Price[] = chosen.map((c) => ({
       source: `${c.supplier || "Поставщик"} · контракт №${c.contractNumber}`,
       unitPrice: c.unitPrice,
+      vatRate: DEFAULT_VAT,
     }));
-    upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, prices }]);
+    upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, vatRate: DEFAULT_VAT, prices }]);
     setEisItems(null); setEisSel(new Set()); setEisQuery("");
   };
 
@@ -278,7 +315,12 @@ export default function NmckPage() {
                     <h2 className="text-lg font-semibold">{calc.title}</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground flex items-center gap-2"><Clock className="h-3.5 w-3.5" /> {fmtDate(calc.createdAt)} · метод сопоставимых рыночных цен</p>
                   </div>
-                  <Button size="sm" variant="outline" className="no-print" onClick={() => window.print()}><Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF</Button>
+                  <div className="flex gap-2 no-print">
+                    <Button size="sm" variant="outline" onClick={downloadXlsx} disabled={xlsxLoading}>
+                      {xlsxLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Database className="mr-1.5 h-3.5 w-3.5" />} Скачать .xlsx (форма №567)
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF</Button>
+                  </div>
                 </div>
 
                 {/* ЕИС: поиск цен в реестре контрактов */}
@@ -328,6 +370,13 @@ export default function NmckPage() {
                           <Input value={p.name} onChange={(e) => setField(i, "name", e.target.value)} placeholder="Наименование позиции" className="min-w-[220px] flex-1" />
                           <Input value={p.unit} onChange={(e) => setField(i, "unit", e.target.value)} placeholder="ед." className="w-20" />
                           <Input value={String(p.quantity)} onChange={(e) => setField(i, "quantity", e.target.value)} placeholder="кол-во" type="number" className="w-24" />
+                          <select
+                            value={String(p.vatRate ?? DEFAULT_VAT)}
+                            onChange={(e) => setField(i, "vatRate", e.target.value)}
+                            title="Ставка НДС итоговой цены"
+                            className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+                            {VAT_OPTIONS.map((v) => <option key={v} value={v}>НДС {v}%</option>)}
+                          </select>
                           <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPosition(i)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                         <div className="mt-2 space-y-1.5">
@@ -335,13 +384,21 @@ export default function NmckPage() {
                             <div key={j} className="flex items-center gap-2">
                               <Input value={pr.source} onChange={(e) => setPrice(i, j, "source", e.target.value)} placeholder="Источник (КП)" className="h-8 flex-1 text-sm" />
                               <Input value={String(pr.unitPrice)} onChange={(e) => setPrice(i, j, "unitPrice", e.target.value)} placeholder="цена за ед." type="number" className="h-8 w-32 text-sm" />
+                              <select
+                                value={String(pr.vatRate ?? DEFAULT_VAT)}
+                                onChange={(e) => setPrice(i, j, "vatRate", e.target.value)}
+                                title="НДС, включённый в цену источника"
+                                className="h-8 rounded-md border border-input bg-background px-1.5 text-xs no-print">
+                                {VAT_OPTIONS.map((v) => <option key={v} value={v}>НДС {v}%</option>)}
+                              </select>
                               <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPrice(i, j)}><XCircle className="h-3.5 w-3.5" /></Button>
                             </div>
                           ))}
                           <Button size="sm" variant="ghost" className="h-7 text-xs no-print" onClick={() => addPrice(i)}><Plus className="mr-1 h-3 w-3" />цена</Button>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-t border-border pt-2">
-                          <span>Средняя: <b>{fmt(r.avg)} ₽</b></span>
+                          <span>Средняя (с НДС {r.targetVat}%): <b>{fmt(r.avg)} ₽</b></span>
+                          <span>σ: {fmt(r.std)}</span>
                           <span className={r.cv > CV_THRESHOLD ? "text-destructive font-medium" : ""}>Коэф. вариации: {fmt(r.cv)}% {r.cv > CV_THRESHOLD ? "⚠ >33%" : r.n >= 2 ? "✓" : ""}</span>
                           <span>Сумма: <b>{fmt(r.sum)} ₽</b></span>
                           <span className={r.n > 0 && r.n < MIN_SOURCES ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>источников: {r.n}{r.n > 0 && r.n < MIN_SOURCES ? ` (нужно ≥${MIN_SOURCES})` : ""}</span>
