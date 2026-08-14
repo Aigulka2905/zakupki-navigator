@@ -47,6 +47,7 @@ import {
   Scale,
   Upload,
   Plus,
+  Receipt,
   AlertTriangle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -66,6 +67,9 @@ import {
   useLegalAck,
   useLegalReingest,
   useLegalAdd,
+  useAdminInvoices,
+  useConfirmInvoice,
+  useCancelInvoice,
   useEisStats,
   useEisIngest,
   useAdminLogs,
@@ -74,7 +78,7 @@ import {
   useSyncRftorgi,
   useSyncAftorgi,
 } from "@/hooks/useAdmin";
-import type { LegalDocument } from "@/hooks/useAdmin";
+import type { LegalDocument, AdminInvoice } from "@/hooks/useAdmin";
 import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
 import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
@@ -776,6 +780,109 @@ function ParametersTab() {
   );
 }
 
+// ── Invoices tab (счета на оплату, безнал) ─────────────────────
+
+const INV_STATUS: Record<AdminInvoice["status"], { label: string; cls: string }> = {
+  pending:   { label: "Ожидает оплаты", cls: "text-amber-600 dark:text-amber-400" },
+  paid:      { label: "Оплачен",        cls: "text-emerald-600 dark:text-emerald-400" },
+  cancelled: { label: "Отменён",        cls: "text-muted-foreground" },
+};
+const INV_FILTERS = [
+  { v: "pending", l: "Ожидают" }, { v: "paid", l: "Оплачены" },
+  { v: "cancelled", l: "Отменены" }, { v: "all", l: "Все" },
+] as const;
+
+function InvoicesTab() {
+  const [status, setStatus] = useState<string>("pending");
+  const { data: invoices = [], isLoading } = useAdminInvoices(status);
+  const confirm = useConfirmInvoice();
+  const cancel = useCancelInvoice();
+
+  const errText = (e: unknown, d: string) =>
+    (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? d;
+
+  const onConfirm = (inv: AdminInvoice) => {
+    if (!window.confirm(`Подтвердить поступление оплаты по счёту № ${inv.number} на ${inv.amountRubles} ₽?\nСумма будет зачислена на баланс «${inv.org.name}».`)) return;
+    confirm.mutate(inv.id, {
+      onSuccess: () => toast.success(`Счёт № ${inv.number} оплачен — ${inv.amountRubles} ₽ зачислено на баланс`),
+      onError: (e) => toast.error(errText(e, "Не удалось подтвердить счёт")),
+    });
+  };
+  const onCancel = (inv: AdminInvoice) => {
+    if (!window.confirm(`Отменить счёт № ${inv.number}? Организация не сможет по нему оплатить.`)) return;
+    cancel.mutate(inv.id, { onError: (e) => toast.error(errText(e, "Не удалось отменить счёт")) });
+  };
+
+  if (isLoading) {
+    return <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">Загрузка...</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground max-w-2xl">
+          Счета на оплату (безнал / платёжное поручение). После поступления средств на расчётный счёт —
+          «Подтвердить оплату»: сумма зачислится на баланс организации.
+        </p>
+        <div className="flex gap-1 shrink-0">
+          {INV_FILTERS.map((f) => (
+            <Button key={f.v} size="sm" variant={status === f.v ? "default" : "outline"}
+              className="h-7 text-[11px]" onClick={() => setStatus(f.v)}>{f.l}</Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="dark:border-white/[0.06] hover:bg-transparent">
+              <TableHead className="text-xs font-semibold text-muted-foreground">№</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Организация</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground text-right">Сумма</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Создан</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Статус</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {invoices.map((inv) => (
+              <TableRow key={inv.id} className="dark:border-white/[0.04]">
+                <TableCell className="py-3 font-medium text-sm tabular-nums">{inv.number}</TableCell>
+                <TableCell className="text-sm">
+                  <div className="font-medium">{inv.org.name}</div>
+                  <div className="text-[11px] text-muted-foreground">ИНН {inv.org.inn}</div>
+                </TableCell>
+                <TableCell className="text-sm text-right tabular-nums font-medium">{inv.amountRubles} ₽</TableCell>
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(inv.createdAt).toLocaleDateString("ru-RU")}</TableCell>
+                <TableCell className={cn("text-xs font-medium", INV_STATUS[inv.status].cls)}>{INV_STATUS[inv.status].label}</TableCell>
+                <TableCell className="text-right">
+                  {inv.status === "pending" ? (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button size="sm" className="h-7 gap-1 text-[11px]" disabled={confirm.isPending}
+                        onClick={() => onConfirm(inv)}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Подтвердить оплату
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-[11px] text-muted-foreground"
+                        disabled={cancel.isPending} onClick={() => onCancel(inv)}>Отменить</Button>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">
+                      {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("ru-RU") : "—"}
+                    </span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+            {invoices.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">Счетов нет</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ── Legal corpus tab ──────────────────────────────────────────
 
 function LegalRow({ doc }: { doc: LegalDocument }) {
@@ -1444,6 +1551,10 @@ export default function AdminPage() {
               <Scale className="h-3.5 w-3.5" />
               Правовой корпус
             </TabsTrigger>
+            <TabsTrigger value="invoices" className="gap-1.5 text-xs">
+              <Receipt className="h-3.5 w-3.5" />
+              Счета
+            </TabsTrigger>
             <TabsTrigger value="params" className="gap-1.5 text-xs">
               <Settings2 className="h-3.5 w-3.5" />
               Параметры системы
@@ -1468,6 +1579,10 @@ export default function AdminPage() {
 
           <TabsContent value="legal" className="mt-4">
             <LegalCorpusTab />
+          </TabsContent>
+
+          <TabsContent value="invoices" className="mt-4">
+            <InvoicesTab />
           </TabsContent>
 
           <TabsContent value="params" className="mt-4">

@@ -214,6 +214,38 @@ export function useLegalAdd() {
   });
 }
 
+// ── Счета на оплату (безнал) — админ ──
+export interface AdminInvoice {
+  id: string;
+  number: number;
+  amountRubles: string;
+  status: "pending" | "paid" | "cancelled";
+  createdAt: string;
+  paidAt?: string | null;
+  org: { name: string; inn: string };
+}
+export function useAdminInvoices(status = "pending") {
+  return useQuery({
+    queryKey: ["admin-invoices", status],
+    queryFn: () => apiClient.get<AdminInvoice[]>(`/admin/invoices?status=${status}`).then((r) => r.data),
+    staleTime: 15_000,
+  });
+}
+export function useConfirmInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/admin/invoices/${id}/confirm`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-invoices"] }),
+  });
+}
+export function useCancelInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.post(`/admin/invoices/${id}/cancel`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-invoices"] }),
+  });
+}
+
 // ── Реестр контрактов ЕИС (собственная база для НМЦ) ──
 export interface EisStats { contracts: number; lastUpdatedAt?: string | null }
 export function useEisStats() {

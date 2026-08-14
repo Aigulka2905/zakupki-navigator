@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { openExternal } from "@/lib/url";
+import { InvoiceSection } from "@/components/InvoiceSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -717,6 +718,11 @@ const BillingPage = () => {
           </Card>
           </Reveal>
         )}
+
+        {/* ── Оплата по счёту (безнал) ──────────────────────── */}
+        <Reveal direction="up" delay={0.08}>
+          <InvoiceSection />
+        </Reveal>
 
         {/* ── Plan cards ────────────────────────────────────── */}
         <Reveal direction="up" delay={0.1}>
