@@ -134,6 +134,7 @@ export default function NmckPage() {
 
   // ЕИС-поиск цен
   const [eisQuery, setEisQuery] = useState("");
+  const [eisUnit, setEisUnit] = useState("");
   const [eisLoading, setEisLoading] = useState(false);
   const [eisItems, setEisItems] = useState<EisItem[] | null>(null);
   const [eisSel, setEisSel] = useState<Set<number>>(new Set());
@@ -244,7 +245,7 @@ export default function NmckPage() {
     setEisError(null); setEisLoading(true); setEisItems(null); setEisSel(new Set());
     if (eisPoll.current) window.clearTimeout(eisPoll.current);
     try {
-      const { data } = await apiClient.post<{ searchId: string }>("/eis/search", { query: q });
+      const { data } = await apiClient.post<{ searchId: string }>("/eis/search", { query: q, unit: eisUnit.trim() || undefined });
       const poll = async () => {
         const { data: r } = await apiClient.get<{ status: string; items?: EisItem[]; error?: string }>(`/eis/search/${data.searchId}`);
         if (r.status === "processing") { eisPoll.current = window.setTimeout(poll, 1500); return; }
@@ -264,7 +265,7 @@ export default function NmckPage() {
     if (!eisItems) return;
     const chosen = eisItems.filter((_, i) => eisSel.has(i));
     if (chosen.length === 0) return;
-    const unit = chosen.find((c) => c.unit)?.unit || "";
+    const unit = eisUnit.trim() || chosen.find((c) => c.unit)?.unit || "";
     const qty = chosen.find((c) => c.quantity)?.quantity || 1;
     const prices: Price[] = chosen.map((c) => ({
       source: `${c.supplier || "Поставщик"} · контракт №${c.contractNumber}`,
@@ -376,9 +377,10 @@ export default function NmckPage() {
                 {/* ЕИС: поиск цен в реестре контрактов */}
                 <div className="rounded-lg border border-border p-3 no-print">
                   <p className="text-sm font-medium flex items-center gap-1.5"><Database className="h-4 w-4 text-primary" /> Подбор цен из ЕИС (реестр контрактов)</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Введите наименование товара — система найдёт прошедшие контракты с поставщиками-победителями и ценами за единицу.</p>
-                  <div className="mt-2 flex gap-2">
-                    <Input value={eisQuery} onChange={(e) => setEisQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="напр. кабель медный" className="max-w-sm" />
+                  <p className="mt-0.5 text-xs text-muted-foreground">Введите <b>конкретную</b> позицию (напр. «стул офисный», а не «мебель») и, по возможности, единицу измерения — система подберёт однородные цены за единицу из прошедших контрактов.</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Input value={eisQuery} onChange={(e) => setEisQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="напр. стул офисный" className="max-w-sm flex-1" />
+                    <Input value={eisUnit} onChange={(e) => setEisUnit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="ед. изм. (напр. шт)" className="w-40" title="Фильтр по единице измерения — оставит только сопоставимые цены" />
                     <Button size="sm" onClick={eisSearch} disabled={eisLoading}>
                       {eisLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1.5 h-3.5 w-3.5" />}Найти
                     </Button>
