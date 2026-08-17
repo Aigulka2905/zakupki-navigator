@@ -139,6 +139,7 @@ export default function NmckPage() {
   const [eisItems, setEisItems] = useState<EisItem[] | null>(null);
   const [eisSel, setEisSel] = useState<Set<number>>(new Set());
   const [eisError, setEisError] = useState<string | null>(null);
+  const [eisWarn, setEisWarn] = useState<string | null>(null);
   const eisPoll = useRef<number | null>(null);
 
   const loadHistory = async () => {
@@ -242,7 +243,7 @@ export default function NmckPage() {
   const eisSearch = async () => {
     const q = eisQuery.trim();
     if (q.length < 3) { setEisError("Введите наименование (от 3 символов)"); return; }
-    setEisError(null); setEisLoading(true); setEisItems(null); setEisSel(new Set());
+    setEisError(null); setEisWarn(null); setEisLoading(true); setEisItems(null); setEisSel(new Set());
     if (eisPoll.current) window.clearTimeout(eisPoll.current);
     try {
       const { data } = await apiClient.post<{ searchId: string }>("/eis/search", { query: q, unit: eisUnit.trim() || undefined });
@@ -275,8 +276,8 @@ export default function NmckPage() {
     upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, vatRate: DEFAULT_VAT, prices }]);
     const { cv, n } = cvOfPrices(prices, DEFAULT_VAT);
     if (n >= 2 && cv > CV_THRESHOLD) {
-      setError(`Подобранные цены неоднородны (V=${fmt(cv)}% > ${CV_THRESHOLD}%) — вероятно, контракты разного масштаба. Нажмите «Привести к однородности» у позиции либо уточните запрос (напр. конкретная модель/ед. изм.).`);
-    } else setError(null);
+      setEisWarn(`Подобранные цены неоднородны (V=${fmt(cv)}% > ${CV_THRESHOLD}%) — вероятно, контракты разного масштаба. Нажмите «Привести к однородности» у позиции ниже либо уточните запрос (конкретная модель/ед. изм.).`);
+    } else setEisWarn(null);
     setEisItems(null); setEisSel(new Set()); setEisQuery("");
   };
 
@@ -314,7 +315,6 @@ export default function NmckPage() {
                 </label>
               </div>
             </div>
-            {error && <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
             <div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={submit} disabled={uploading}>
@@ -327,6 +327,7 @@ export default function NmckPage() {
               </div>
               <p className="mt-1.5 text-xs text-muted-foreground">ИИ извлечёт цены из КП, либо создайте пустой расчёт и подберите цены из реестра контрактов ЕИС. По Приказу №567 нужно ≥{MIN_SOURCES} источников; коэф. вариации ≤{CV_THRESHOLD}%.</p>
             </div>
+            {error && <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
           </div>
         </Card>
 
@@ -386,6 +387,11 @@ export default function NmckPage() {
                     </Button>
                   </div>
                   {eisError && <p className="mt-1.5 text-xs text-destructive">{eisError}</p>}
+                  {eisWarn && (
+                    <p className="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{eisWarn}
+                    </p>
+                  )}
                   {eisLoading && <p className="mt-2 text-xs text-muted-foreground">Ищем в ЕИС (это может занять ~10–30 с)…</p>}
                   {eisItems && (
                     eisItems.length === 0 ? (
