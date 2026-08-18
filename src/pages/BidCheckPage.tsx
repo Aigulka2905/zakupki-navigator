@@ -6,12 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import {
   Upload, FileText, Loader2, ShieldCheck, CheckCircle2, AlertTriangle,
   XCircle, HelpCircle, ClipboardList, FileWarning, Lightbulb, Printer, Scale,
+  CalendarClock, FileCheck2,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { openExternal } from "@/lib/url";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
-interface ChecklistItem { requirement: string; status: string; detail: string; ref: string; citations?: Citation[]; confidence?: string; }
+interface ChecklistItem { requirement: string; status: string; detail: string; ref: string; citations?: Citation[]; confidence?: string; specMatch?: "verified" | "weak" | "unverified"; }
 interface CheckResult {
   verdict: string;
   score: number | null;
@@ -20,6 +21,13 @@ interface CheckResult {
   missingDocuments: string[];
   recommendations: string[];
   mode?: string;
+  unverifiedCount?: number;
+  ruleChecks?: RuleChecks;
+}
+interface RuleChecks {
+  missingDocuments: { id: string; label: string; presentInBid: boolean }[];
+  deadlines: { id: string; label: string; snippet: string }[];
+  forms: { referenced: string[]; missingInBid: string[] };
 }
 
 type Mode = "223" | "44" | "commercial";
@@ -53,9 +61,15 @@ const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"
 
 function buildReportHtml(r: CheckResult): string {
   const rows = r.checklist.map((c) =>
-    `<tr><td class="st">${esc(c.status)}</td><td>${esc(c.requirement)}${c.ref ? ` <span class="ref">${esc(c.ref)}</span>` : ""}${c.detail ? `<div class="d">${esc(c.detail)}</div>` : ""}</td></tr>`).join("");
+    `<tr><td class="st">${esc(c.status)}</td><td>${esc(c.requirement)}${c.ref ? ` <span class="ref">${esc(c.ref)}</span>` : ""}${c.specMatch === "unverified" ? ` <span class="warn">не найдено в ТЗ</span>` : ""}${c.detail ? `<div class="d">${esc(c.detail)}</div>` : ""}</td></tr>`).join("");
   const md = r.missingDocuments.length ? `<h3>Недостающие документы</h3><ul>${r.missingDocuments.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
   const rec = r.recommendations.length ? `<h3>Рекомендации</h3><ul>${r.recommendations.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const rc = r.ruleChecks;
+  const ruleParts: string[] = [];
+  if (rc?.missingDocuments.length) ruleParts.push(`<p><b>ТЗ требует, но в заявке не найдено:</b></p><ul>${rc.missingDocuments.map((d) => `<li>${esc(d.label)}</li>`).join("")}</ul>`);
+  if (rc?.forms.missingInBid.length) ruleParts.push(`<p><b>Формы/приложения из ТЗ, не найденные в заявке:</b> ${rc.forms.missingInBid.map(esc).join(", ")}</p>`);
+  if (rc?.deadlines.length) ruleParts.push(`<p><b>Ключевые сроки из ТЗ:</b></p><ul>${rc.deadlines.map((d) => `<li>${esc(d.label)}: ${esc(d.snippet)}</li>`).join("")}</ul>`);
+  const rules = ruleParts.length ? `<h3>Автопроверка по правилам (без ИИ)</h3>${ruleParts.join("")}` : "";
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
     body{font-family:Arial,"DejaVu Sans",sans-serif;color:#1a1a2e;font-size:12px;line-height:1.45;margin:24px}
     h1{font-size:16px;margin:0 0 4px} h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#667;border-top:1px solid #e3e6ee;padding-top:8px;margin:14px 0 6px}
@@ -63,6 +77,7 @@ function buildReportHtml(r: CheckResult): string {
     .sum{margin:8px 0}
     table{width:100%;border-collapse:collapse} td{border-top:1px solid #eef;padding:6px 8px;vertical-align:top;font-size:11px}
     .st{white-space:nowrap;font-weight:600;width:110px} .ref{color:#667;font-size:10px} .d{color:#556;margin-top:2px}
+    .warn{color:#92400e;background:#fef3c7;border-radius:4px;padding:0 4px;font-size:10px;font-weight:600}
     ul{margin:4px 0;padding-left:18px} li{margin:1px 0}
     .foot{margin-top:14px;color:#889;font-size:10px;border-top:1px solid #e3e6ee;padding-top:6px}
   </style></head><body>
@@ -71,7 +86,7 @@ function buildReportHtml(r: CheckResult): string {
     ${r.summary ? `<p class="sum">${esc(r.summary)}</p>` : ""}
     <h3>Чек-лист требований</h3>
     <table>${rows || "<tr><td>—</td></tr>"}</table>
-    ${md}${rec}
+    ${rules}${md}${rec}
     <div class="foot">Сформировано в ZakupkiAI · носит рекомендательный характер</div>
   </body></html>`;
 }
@@ -217,6 +232,12 @@ export default function BidCheckPage() {
                 <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <ClipboardList className="h-3.5 w-3.5" /> Чек-лист требований
                 </p>
+                {(result.unverifiedCount ?? 0) > 0 && (
+                  <p className="mb-2 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Пункты, помеченные «не найдено в ТЗ» ({result.unverifiedCount}), не удалось сопоставить с текстом документации — возможно, ИИ ошибся с требованием или ссылкой. Проверьте их по оригиналу ТЗ, прежде чем править заявку.</span>
+                  </p>
+                )}
                 <ul className="divide-y divide-border rounded-lg border border-border">
                   {result.checklist.map((c, i) => {
                     const st = statusStyle(c.status);
@@ -227,6 +248,11 @@ export default function BidCheckPage() {
                           <p className="font-medium">
                             {c.requirement}
                             {c.ref && <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-foreground/70">{c.ref}</span>}
+                            {c.specMatch === "unverified" && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" title="Требование или ссылка не найдены в тексте ТЗ — проверьте вручную">
+                                <AlertTriangle className="h-2.5 w-2.5" /> не найдено в ТЗ
+                              </span>
+                            )}
                           </p>
                           {c.detail && <p className="text-xs text-muted-foreground mt-0.5">{c.detail}</p>}
                           {c.citations && c.citations.length > 0 && (
@@ -274,6 +300,62 @@ export default function BidCheckPage() {
                   ))}
                 </ul>
               </div>
+            )}
+
+            {/* Автопроверка по правилам (детерминированная, без ИИ) */}
+            {result.ruleChecks && (
+              (result.ruleChecks.missingDocuments.length > 0 ||
+               result.ruleChecks.deadlines.length > 0 ||
+               result.ruleChecks.forms.missingInBid.length > 0) && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Автопроверка по правилам
+                    <span className="font-normal normal-case text-[10px] text-muted-foreground">(без ИИ, по формальным признакам)</span>
+                  </p>
+                  <div className="space-y-2.5">
+                    {result.ruleChecks.missingDocuments.length > 0 && (
+                      <div>
+                        <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+                          <FileWarning className="h-3 w-3" /> ТЗ требует, но в заявке не найдено:
+                        </p>
+                        <ul className="space-y-0.5">
+                          {result.ruleChecks.missingDocuments.map((d) => (
+                            <li key={d.id} className="flex gap-1.5 text-sm text-muted-foreground"><XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />{d.label}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {result.ruleChecks.forms.missingInBid.length > 0 && (
+                      <div>
+                        <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                          <FileCheck2 className="h-3 w-3" /> Формы/приложения из ТЗ, не найденные в заявке:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {result.ruleChecks.forms.missingInBid.map((f, i) => (
+                            <span key={i} className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">{f}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {result.ruleChecks.deadlines.length > 0 && (
+                      <div>
+                        <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-foreground/70">
+                          <CalendarClock className="h-3 w-3" /> Ключевые сроки из ТЗ:
+                        </p>
+                        <ul className="space-y-0.5">
+                          {result.ruleChecks.deadlines.map((d) => (
+                            <li key={d.id} className="flex gap-1.5 text-sm text-muted-foreground">
+                              <span className="text-foreground/70">{d.label}:</span>
+                              <span className="font-medium tabular-nums">{d.snippet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 text-[10px] text-muted-foreground">Эти проверки формальные и не заменяют чтение ТЗ — сверьте с оригиналом.</p>
+                </div>
+              )
             )}
 
             <p className="border-t border-border pt-2 text-[11px] text-muted-foreground">
