@@ -49,6 +49,7 @@ import {
   Plus,
   Receipt,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,8 @@ import {
   useLegalAck,
   useLegalReingest,
   useLegalAdd,
+  useLegalPractice,
+  useLegalPracticeDelete,
   useAdminInvoices,
   useConfirmInvoice,
   useCancelInvoice,
@@ -78,7 +81,7 @@ import {
   useSyncRftorgi,
   useSyncAftorgi,
 } from "@/hooks/useAdmin";
-import type { LegalDocument, AdminInvoice } from "@/hooks/useAdmin";
+import type { LegalDocument, AdminInvoice, LegalKind, LegalPracticeItem } from "@/hooks/useAdmin";
 import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
 import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
@@ -953,27 +956,53 @@ function LegalCorpusTab() {
   const add = useLegalAdd();
 
   const [showAdd, setShowAdd] = useState(false);
+  const [kind, setKind] = useState<LegalKind>("norm");
   const [file, setFile] = useState<File | null>(null);
   const [law, setLaw] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [ranges, setRanges] = useState("");
+  const [docNumber, setDocNumber] = useState("");
+  const [authority, setAuthority] = useState("");
 
-  const resetForm = () => { setFile(null); setLaw(""); setName(""); setUrl(""); setRanges(""); setShowAdd(false); };
+  const isNorm = kind === "norm";
+
+  const resetForm = () => {
+    setKind("norm"); setFile(null); setLaw(""); setName(""); setUrl("");
+    setRanges(""); setDocNumber(""); setAuthority(""); setShowAdd(false);
+  };
 
   const onAdd = () => {
-    if (!law.trim()) { toast.error("Укажите закон (например, «44-ФЗ»)"); return; }
-    if (!file) { toast.error("Приложите файл с текстом закона (.pdf/.txt/.docx)"); return; }
+    if (isNorm && !law.trim()) { toast.error("Укажите закон (например, «44-ФЗ»)"); return; }
+    if (!isNorm && !name.trim()) { toast.error("Укажите название документа (например, «Решение Московского УФАС от 12.03.2024 по делу № 077/06/…»)"); return; }
+    if (!file) { toast.error("Приложите файл (.pdf/.txt/.docx)"); return; }
     add.mutate(
-      { file, law: law.trim(), name: name.trim() || undefined, url: url.trim() || undefined, ranges: ranges.trim() || undefined },
       {
-        onSuccess: (r: { revision?: string; articles?: number }) => {
-          toast.success(`Добавлено: ${law.trim()} — редакция ${r.revision ?? "—"}, статей ${r.articles ?? "—"}`);
+        file, kind,
+        law: law.trim() || undefined,
+        name: name.trim() || undefined,
+        url: url.trim() || undefined,
+        ranges: isNorm ? (ranges.trim() || undefined) : undefined,
+        docNumber: isNorm ? undefined : (docNumber.trim() || undefined),
+        authority: isNorm ? undefined : (authority.trim() || undefined),
+      },
+      {
+        onSuccess: (r: { revision?: string; articles?: number; chunks?: number }) => {
+          toast.success(isNorm
+            ? `Добавлено: ${law.trim()} — редакция ${r.revision ?? "—"}, статей ${r.articles ?? "—"}`
+            : `Документ добавлен в корпус (фрагментов: ${r.chunks ?? "—"})`);
           resetForm();
         },
         onError: (err: unknown) => toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось добавить документ"),
       },
     );
+  };
+
+  const KIND_LABELS: Record<LegalKind, string> = {
+    norm: "Норма закона (полный текст)",
+    fas_decision: "Решение ФАС / УФАС",
+    court: "Судебный акт",
+    letter: "Письмо (Минфин/ФАС/Минэк)",
   };
 
   if (isLoading) {
@@ -1005,24 +1034,60 @@ function LegalCorpusTab() {
       {showAdd && (
         <div className="rounded-lg border border-border/60 dark:border-white/[0.06] p-4 space-y-3">
           <div className="text-sm font-medium">Новый документ в правовой корпус</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground">Закон *</label>
-              <Input value={law} onChange={(e) => setLaw(e.target.value)} placeholder="напр. 44-ФЗ" className="h-8 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground">Название</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. О контрактной системе…" className="h-8 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground">URL первоисточника</label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="h-8 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground">Диапазоны статей (опционально)</label>
-              <Input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="напр. 30-50,93" className="h-8 text-sm" />
-            </div>
+          <div className="space-y-1">
+            <label className="text-[11px] text-muted-foreground">Тип документа</label>
+            <Select value={kind} onValueChange={(v) => setKind(v as LegalKind)}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(KIND_LABELS) as LegalKind[]).map((k) => (
+                  <SelectItem key={k} value={k} className="text-sm">{KIND_LABELS[k]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          {isNorm ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Закон *</label>
+                <Input value={law} onChange={(e) => setLaw(e.target.value)} placeholder="напр. 44-ФЗ" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Название</label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. О контрактной системе…" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">URL первоисточника</label>
+                <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Диапазоны статей (опционально)</label>
+                <Input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="напр. 30-50,93" className="h-8 text-sm" />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[11px] text-muted-foreground">Название документа *</label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. Решение Московского УФАС от 12.03.2024 по делу № 077/06/…" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Номер дела / письма</label>
+                <Input value={docNumber} onChange={(e) => setDocNumber(e.target.value)} placeholder="напр. 077/06/106-1234/2024" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Орган</label>
+                <Input value={authority} onChange={(e) => setAuthority(e.target.value)} placeholder="напр. Московское УФАС России" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">Закон (контекст, опц.)</label>
+                <Input value={law} onChange={(e) => setLaw(e.target.value)} placeholder="напр. 44-ФЗ" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">URL первоисточника</label>
+                <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="h-8 text-sm" />
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             <input type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" id="legal-add-file"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
@@ -1038,8 +1103,9 @@ function LegalCorpusTab() {
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Из файла извлекается текст и распознаются статьи (по заголовкам «Статья N»). Добавляется и в
-            ИИ-корпус (заземление проверок), и в этот реестр. Обновлять потом — кнопкой «Загрузить обновление» у строки.
+            {isNorm
+              ? "Из файла извлекается текст и распознаются статьи (по заголовкам «Статья N»). Добавляется и в ИИ-корпус (заземление проверок), и в этот реестр редакций. Обновлять потом — кнопкой «Загрузить обновление» у строки."
+              : "Решения ФАС, судебные акты и письма грузятся целиком как единый источник практики (без разбивки на статьи) — они пополняют ИИ-корпус для заземления проверок, но в реестр редакций законов ниже не попадают."}
           </p>
         </div>
       )}
@@ -1060,6 +1126,79 @@ function LegalCorpusTab() {
             {docs.map((d) => <LegalRow key={d.id} doc={d} />)}
             {docs.length === 0 && (
               <TableRow><TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">Корпус пуст — загрузите тексты законов</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <LegalPracticeSection />
+    </div>
+  );
+}
+
+// Практика (решения ФАС / судебные акты / письма) — источники без разбивки на
+// статьи, поэтому в реестр редакций законов не попадают; показываем отдельно.
+const PRACTICE_KIND_LABELS: Record<LegalPracticeItem["kind"], string> = {
+  fas_decision: "Решение ФАС",
+  court: "Суд. акт",
+  letter: "Письмо",
+};
+
+function LegalPracticeSection() {
+  const { data: items = [], isLoading } = useLegalPractice();
+  const del = useLegalPracticeDelete();
+
+  const onDelete = (it: LegalPracticeItem) => {
+    if (!window.confirm(`Удалить из корпуса «${it.title}»?`)) return;
+    del.mutate(it.id, {
+      onSuccess: () => toast.success("Документ удалён из корпуса"),
+      onError: () => toast.error("Не удалось удалить документ"),
+    });
+  };
+
+  if (isLoading) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-muted-foreground">
+        Практика и письма ({items.length}) — заземляют проверки ИИ, но не входят в реестр редакций законов
+      </div>
+      <div className="rounded-lg border border-border/60 dark:border-white/[0.06] overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="dark:border-white/[0.06] hover:bg-transparent">
+              <TableHead className="text-xs font-semibold text-muted-foreground">Документ</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Тип</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Орган</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground">Фрагментов</TableHead>
+              <TableHead className="text-xs font-semibold text-muted-foreground text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((it) => (
+              <TableRow key={it.id} className="dark:border-white/[0.06]">
+                <TableCell className="text-sm">
+                  <div className="font-medium">{it.title}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {[it.docNumber && `дело/№ ${it.docNumber}`, it.law].filter(Boolean).join(" · ")}
+                    {it.url && (
+                      <> · <a href={it.url} target="_blank" rel="noreferrer" className="underline hover:text-foreground">первоисточник</a></>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{PRACTICE_KIND_LABELS[it.kind]}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{it.authority || "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{it.chunks}</TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px] text-red-400 hover:text-red-300"
+                    disabled={del.isPending} onClick={() => onDelete(it)}>
+                    <Trash2 className="h-3.5 w-3.5" /> Удалить
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {items.length === 0 && (
+              <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">Практика пока не загружена</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

@@ -162,6 +162,36 @@ export function useLegalCorpus() {
   });
 }
 
+// Источник практики (решение ФАС / судебный акт / письмо) в корпусе.
+export interface LegalPracticeItem {
+  id: string;
+  kind: "fas_decision" | "court" | "letter";
+  title: string;
+  docNumber?: string | null;
+  authority?: string | null;
+  law?: string | null;
+  date?: string | null;
+  url?: string | null;
+  createdAt: string;
+  chunks: number;
+}
+
+export function useLegalPractice() {
+  return useQuery({
+    queryKey: ["admin-legal-practice"],
+    queryFn: () => apiClient.get<LegalPracticeItem[]>("/admin/legal/practice").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+
+export function useLegalPracticeDelete() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/admin/legal/practice/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-legal-practice"] }),
+  });
+}
+
 export function useLegalCheck() {
   const qc = useQueryClient();
   return useMutation({
@@ -194,23 +224,36 @@ export function useLegalReingest() {
   });
 }
 
-// Добавить НОВЫЙ закон в корпус (файл + метаданные). Обновление существующего — useLegalReingest.
+// Тип документа правового корпуса: норма (полный текст закона) либо практика
+// (решение ФАС / судебный акт / письмо — грузятся без разбивки на статьи).
+export type LegalKind = "norm" | "fas_decision" | "court" | "letter";
+
+// Добавить НОВЫЙ документ в корпус (файл + метаданные). Обновление закона — useLegalReingest.
 export function useLegalAdd() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { file: File; law: string; name?: string; url?: string; ranges?: string }) => {
+    mutationFn: (payload: {
+      file: File; kind?: LegalKind; law?: string; name?: string; url?: string;
+      ranges?: string; docNumber?: string; authority?: string;
+    }) => {
       const fd = new FormData();
       fd.append("file", payload.file);
-      fd.append("law", payload.law);
+      if (payload.kind) fd.append("kind", payload.kind);
+      if (payload.law) fd.append("law", payload.law);
       if (payload.name) fd.append("name", payload.name);
       if (payload.url) fd.append("url", payload.url);
       if (payload.ranges) fd.append("ranges", payload.ranges);
+      if (payload.docNumber) fd.append("docNumber", payload.docNumber);
+      if (payload.authority) fd.append("authority", payload.authority);
       return apiClient.post("/admin/legal", fd, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 600_000,
       }).then((r) => r.data);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-legal"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-legal"] });
+      qc.invalidateQueries({ queryKey: ["admin-legal-practice"] });
+    },
   });
 }
 
