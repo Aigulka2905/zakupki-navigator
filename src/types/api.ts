@@ -55,6 +55,7 @@ export interface User {
   fullName: string;
   role: UserRole;
   organizationId: string;
+  emailVerified?: boolean;
   isOrgOwner?: boolean;
   createdAt: string;
   lastLogin: string | null;

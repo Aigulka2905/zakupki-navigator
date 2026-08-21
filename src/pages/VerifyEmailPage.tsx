@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import apiClient from "@/lib/api-client";
 import { tokenStorage } from "@/lib/auth";
+import { queryClient } from "@/lib/query-client";
 import type { AuthTokens } from "@/types/api";
 import { Link } from "react-router-dom";
 
@@ -33,6 +34,10 @@ const VerifyEmailPage = () => {
       .get<AuthTokens & { message: string }>(`/auth/verify-email?token=${token}`)
       .then(({ data }) => {
         tokenStorage.setTokens(data.accessToken);
+        // Сбрасываем кэш профиля: если пользователь уже был залогинен и видел
+        // экран «Подтвердите email», после подтверждения он должен обновиться
+        // на emailVerified=true, а не показать заглушку снова.
+        queryClient.invalidateQueries({ queryKey: ["current-user"] });
         setStatus("success");
         setTimeout(() => navigate("/", { replace: true }), 2500);
       })

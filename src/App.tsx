@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { tokenStorage } from "@/lib/auth";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { VerifyEmailNotice } from "@/components/auth/VerifyEmailNotice";
 
 // Ленивая загрузка страниц → каждый маршрут попадает в отдельный чанк и
 // подгружается по требованию. Это резко уменьшает размер первичного бандла
@@ -48,8 +49,17 @@ function RouteFallback() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { data: currentUser, isLoading } = useCurrentUser();
   if (!tokenStorage.isAuthenticated()) {
     return <Navigate to="/login" replace />;
+  }
+  // Профиль ещё грузится — короткий лоадер (react-query кэширует /auth/me, при
+  // навигации между страницами не мигает).
+  if (isLoading) return <RouteFallback />;
+  // Залогинен, но email не подтверждён → все API отдают 403 EMAIL_NOT_VERIFIED.
+  // Показываем понятный экран подтверждения вместо каскада ошибок.
+  if (currentUser && currentUser.emailVerified === false) {
+    return <VerifyEmailNotice email={currentUser.email} />;
   }
   return <>{children}</>;
 }
