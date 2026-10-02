@@ -112,11 +112,13 @@ const ORG_TYPE_COLORS = {
 const PLAN_LABELS: Record<SubscriptionPlan, string> = {
   free: "Free",
   pro: "Pro",
+  business: "Business",
   enterprise: "Enterprise",
 };
 const PLAN_COLORS: Record<SubscriptionPlan, string> = {
   free: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   pro: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  business: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
   enterprise: "bg-violet-500/10 text-violet-400 border-violet-500/20",
 };
 

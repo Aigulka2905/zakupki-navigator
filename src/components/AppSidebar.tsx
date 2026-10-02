@@ -155,7 +155,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Мои закупки",          url: "/procurements?mine=true", icon: Briefcase },
         { title: "Все закупки",          url: "/procurements",           icon: Briefcase },
         { title: "Проверка документации", url: "/doc-review",            icon: Gavel },
-        { title: "Оценка заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
+        { title: "Анализ заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },

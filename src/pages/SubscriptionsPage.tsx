@@ -347,14 +347,8 @@ export default function SubscriptionsPage() {
   const isCustomer = currentUser?.organization?.orgType === "customer";
 
   return (
-    <AppLayout>
+    <AppLayout title="Подписки" subtitle="Отслеживайте новые закупки избранных заказчиков и по интересующим кодам ОКПД">
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight">Подписки</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Отслеживайте новые закупки избранных заказчиков и по интересующим кодам ОКПД.
-          </p>
-        </header>
 
         {isCustomer ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">

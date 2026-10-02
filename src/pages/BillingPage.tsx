@@ -498,13 +498,13 @@ const BillingPage = () => {
     queryKey: ["billing-usage"],
     queryFn: fetchUsage,
     staleTime: 60_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { data: payments = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ["billing-payments"],
     queryFn: fetchPayments,
     staleTime: 30_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   // Авто-зачисление при возврате с оплаты. ЮKassa после успешной оплаты
   // перенаправляет на /billing?status=success. Раньше баланс обновлялся только
@@ -557,7 +557,7 @@ const BillingPage = () => {
     poll();
   }, [searchParams, setSearchParams, qc]);
 
-  const { mutate: doTopup, isLoading: topupPending } = useMutation({
+  const { mutate: doTopup, isPending: topupPending } = useMutation({
     mutationFn: createTopup,
     onSuccess: (data) => {
       setTopupOpen(false);
@@ -573,9 +573,9 @@ const BillingPage = () => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       toast.error(msg ?? "Ошибка создания платежа");
     },
-  } as Parameters<typeof useMutation>[0]);
+  });
 
-  const { mutate: doSubscribe, isLoading: subscribePending } = useMutation({
+  const { mutate: doSubscribe, isPending: subscribePending } = useMutation({
     mutationFn: subscribePlan,
     onSuccess: (data) => {
       setSubscribeTo(null);
@@ -587,7 +587,7 @@ const BillingPage = () => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       toast.error(msg ?? "Не удалось подключить тариф");
     },
-  } as Parameters<typeof useMutation>[0]);
+  });
 
   const handleSyncPayment = async (id: string) => {
     setSyncingId(id);
@@ -893,7 +893,7 @@ const BillingPage = () => {
         open={topupOpen}
         onClose={() => setTopupOpen(false)}
         onConfirm={(amount) => doTopup(amount)}
-        isPending={topupPending as boolean}
+        isPending={topupPending}
       />
 
       {subscribeTo && (
@@ -902,7 +902,7 @@ const BillingPage = () => {
           balanceKopecks={usage?.balanceKopecks ?? 0}
           onClose={() => setSubscribeTo(null)}
           onConfirm={() => doSubscribe(subscribeTo)}
-          isPending={subscribePending as boolean}
+          isPending={subscribePending}
         />
       )}
     </AppLayout>

@@ -113,7 +113,8 @@ export interface Procurement {
   updatedAt: string;
   isFavoriteCustomer?: boolean;
   etp?: Pick<ETPPlatform, 'name' | 'code'>;
-  customer?: Pick<Organization, 'id' | 'name' | 'inn'>;
+  // В списках — id/name/inn; карточка закупки отдаёт и КПП.
+  customer?: Pick<Organization, 'id' | 'name' | 'inn'> & { kpp?: string };
 }
 
 export interface FavoriteOrg {

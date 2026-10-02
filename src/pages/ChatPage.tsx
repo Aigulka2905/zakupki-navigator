@@ -691,21 +691,21 @@ const ChatPage = () => {
     queryKey: ["chat-sessions"],
     queryFn: fetchSessions,
     staleTime: 30_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { data: procurement } = useQuery({
     queryKey: ["procurement", procurementId],
     queryFn: () => fetchProcurement(procurementId!),
     enabled: !!procurementId,
     staleTime: 60_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { data: knowledgeDoc } = useQuery({
     queryKey: ["knowledge-doc", docId],
     queryFn: () => fetchDocument(docId!),
     enabled: !!docId,
     staleTime: 300_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { isLoading: historyLoading, data: historyData, isError: historyError } = useQuery({
     queryKey: ["conversations", sessionId ?? null, procurementId ?? null],

@@ -190,7 +190,7 @@ const TOPICS: Topic[] = [
               { icon: MessageSquare, title: "Чат с ассистентом", desc: "Вопросы по 223-ФЗ/44-ФЗ, разбор закупок и документов" },
               { icon: Briefcase, title: "Закупки", desc: "Мониторинг тендеров с AI-оценкой релевантности" },
               { icon: FileSearch, title: "Анализ документа", desc: "Автоматическая проверка на нарушения 223-ФЗ/44-ФЗ" },
-              { icon: ClipboardCheck, title: "Оценка заявок", desc: "Сверка заявок участников с ТЗ, сводная таблица, PDF" },
+              { icon: ClipboardCheck, title: "Анализ и оценка заявок", desc: "Сверка заявок участников с ТЗ, сводная таблица, PDF" },
               { icon: Calculator, title: "Обоснование НМЦ", desc: "Расчёт НМЦК по анализу рынка, цены из ЕИС" },
               { icon: UserSearch, title: "Проверка контрагента", desc: "Отчёт по ИНН (Checko) + госреестры, экспорт в PDF" },
               { icon: Building2, title: "Профиль организации", desc: "Реквизиты и ОКВЭД — для точных рекомендаций" },
@@ -547,7 +547,7 @@ const TOPICS: Topic[] = [
         title: "Как запустить оценку",
         content: (
           <Steps>
-            <Step n={1} title="Откройте «Оценка заявок» и укажите название закупки">
+            <Step n={1} title="Откройте «Анализ заявок» (у участника — «Оценка заявок») и укажите название закупки">
               Например «Поставка офисной бумаги А4».
             </Step>
             <Step n={2} title="Загрузите документацию закупки (ТЗ)">
@@ -1005,7 +1005,9 @@ const InstructionsPage = () => {
   }, [currentUser, roleTouched]);
 
   // Темы для выбранной роли (без audience → показываем обеим).
-  const byAudience = TOPICS.filter((t) => !t.audience || t.audience === role);
+  // У заказчика раздел называется «Анализ заявок» (в меню — так же).
+  const byAudience = TOPICS.filter((t) => !t.audience || t.audience === role)
+    .map((t) => (role === "customer" && t.id === "bid-evaluation" ? { ...t, label: "Анализ заявок" } : t));
 
   const filteredTopics = search.trim()
     ? byAudience.filter(

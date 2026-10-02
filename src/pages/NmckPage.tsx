@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 
-interface Price { source: string; unitPrice: number | string; vatRate?: number | string; }
+// excluded — цена исключена из расчёта (аномальная), приходит и с бэкенда.
+interface Price { source: string; unitPrice: number | string; vatRate?: number | string; excluded?: boolean; }
 interface Position { name: string; unit: string; quantity: number | string; vatRate?: number | string; prices: Price[]; }
 interface Calc {
   id: string; title: string; status: "processing" | "completed" | "failed";
@@ -178,8 +179,9 @@ export default function NmckPage() {
 
   // редактирование позиций
   const upd = (fn: (p: Position[]) => Position[]) => setPositions((prev) => fn(prev.map((x) => ({ ...x, prices: [...x.prices] }))));
-  const setField = (i: number, k: keyof Position, v: string) => upd((p) => { (p[i] as Record<string, unknown>)[k] = v; return p; });
-  const setPrice = (i: number, j: number, k: keyof Price, v: string) => upd((p) => { (p[i].prices[j] as Record<string, unknown>)[k] = v; return p; });
+  // Текстовые поля из инпутов (prices/excluded меняются своими функциями).
+  const setField = (i: number, k: Exclude<keyof Position, "prices">, v: string) => upd((p) => { p[i] = { ...p[i], [k]: v }; return p; });
+  const setPrice = (i: number, j: number, k: Exclude<keyof Price, "excluded">, v: string) => upd((p) => { p[i].prices[j] = { ...p[i].prices[j], [k]: v }; return p; });
   const addPrice = (i: number) => upd((p) => { p[i].prices.push({ source: "", unitPrice: "", vatRate: DEFAULT_VAT }); return p; });
   const delPrice = (i: number, j: number) => upd((p) => { p[i].prices.splice(j, 1); return p; });
   const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", vatRate: DEFAULT_VAT, prices: [{ source: "", unitPrice: "", vatRate: DEFAULT_VAT }] }]);

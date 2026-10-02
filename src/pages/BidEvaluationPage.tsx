@@ -11,6 +11,7 @@ import {
 import apiClient from "@/lib/api-client";
 import { ProtocolDialog } from "@/components/ProtocolDialog";
 import { CoverageNotes, type Coverage } from "@/components/CoverageNotes";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type Finding = string | { text: string; ref?: string };
 interface BidResult {
@@ -65,6 +66,8 @@ const PRINT_CSS = `
 }`;
 
 export default function BidEvaluationPage() {
+  const { data: currentUser } = useCurrentUser();
+  const isCustomer = currentUser?.organization?.orgType === "customer";
   const [title, setTitle] = useState("");
   const [specFiles, setSpecFiles] = useState<File[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([{ name: "", files: [] }]);
@@ -141,7 +144,7 @@ export default function BidEvaluationPage() {
   const fmtDate = (s: string) => new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
 
   return (
-    <AppLayout title="Оценка заявок участников" subtitle="ИИ сверяет заявки с документацией закупки (ТЗ) и даёт рекомендации">
+    <AppLayout title={isCustomer ? "Анализ заявок участников" : "Оценка заявок участников"} subtitle="ИИ сверяет заявки с документацией закупки (ТЗ) и даёт рекомендации">
       <style>{PRINT_CSS}</style>
       <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
 

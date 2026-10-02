@@ -256,7 +256,7 @@ function OkvedProcurements({ okvedCodes }: { okvedCodes: OkvedCode[] }) {
     queryFn: () => fetchByOkved(keywords),
     enabled: !!keywords,
     staleTime: 120_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   if (isLoading) {
     return (
@@ -399,7 +399,7 @@ const OrganizationPage = () => {
   const { data: docs = [], isLoading: docsLoading } = useQuery({
     queryKey: ["org-documents"],
     queryFn: fetchDocs,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { register, handleSubmit, setValue, getValues, formState: { errors, isDirty, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -803,7 +803,7 @@ const OrganizationPage = () => {
                         type="button"
                         className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/5 transition-all"
                         onClick={() => deleteDoc.mutate(doc.id)}
-                        disabled={deleteDoc.isLoading}
+                        disabled={deleteDoc.isPending}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

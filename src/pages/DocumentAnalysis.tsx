@@ -285,7 +285,7 @@ const DocumentAnalysis = () => {
     queryKey: ["analysis-history"],
     queryFn: fetchHistory,
     staleTime: 30_000,
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const { data: analysis, isError: analysisError } = useQuery({
     queryKey: ["analysis", analysisId],
@@ -296,7 +296,7 @@ const DocumentAnalysis = () => {
       if (status === "completed" || status === "failed") return false;
       return 2500;
     },
-  } as Parameters<typeof useQuery>[0]);
+  });
 
   const prevAnalysisStatus = useRef<string | undefined>(undefined);
   useEffect(() => {
