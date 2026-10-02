@@ -127,8 +127,17 @@ GlassInput.displayName = "GlassInput";
 
 // ── 2FA helpers ───────────────────────────────────────────────
 
-const errText = (err: unknown, fallback: string) =>
-  (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? fallback;
+// fallback («Неверный email или пароль» и т. п.) — только для ответа сервера без
+// текста ошибки. Нет ответа / лимит / сбой сервера — говорим как есть, иначе
+// пользователь думает, что ошибся в пароле.
+const errText = (err: unknown, fallback: string) => {
+  const res = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+  if (res?.data?.error) return res.data.error;
+  if (!res) return "Не удалось связаться с сервером. Проверьте подключение и повторите попытку.";
+  if (res.status === 429) return "Слишком много попыток. Подождите минуту и повторите.";
+  if ((res.status ?? 0) >= 500) return "Сервер временно недоступен. Повторите попытку через минуту.";
+  return fallback;
+};
 
 const primaryBtn =
   "relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-200 transition-all hover:from-violet-600 hover:to-indigo-600 hover:shadow-violet-300 disabled:opacity-60";

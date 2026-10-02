@@ -75,8 +75,17 @@ apiClient.interceptors.response.use(
       return apiClient(original);
     } catch (refreshError) {
       processQueue(refreshError, null);
-      tokenStorage.clearTokens();
-      window.location.href = '/login';
+      // Выходим, только если сервер ОТКЛОНИЛ refresh-токен (4xx: 401 — нет/протух/
+      // переиспользован). Сбой сети, 429 (лимит) и 5xx (рестарт при деплое,
+      // перегрузка) — сессия жива: токены оставляем и просто отдаём ошибку,
+      // следующий запрос попробует обновиться снова. Раньше любой такой сбой
+      // выкидывал пользователя на /login.
+      const status = (refreshError as AxiosError)?.response?.status;
+      const transient = !status || status === 429 || status >= 500;
+      if (!transient) {
+        tokenStorage.clearTokens();
+        window.location.href = '/login';
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
