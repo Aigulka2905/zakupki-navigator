@@ -8,10 +8,11 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { openExternal } from "@/lib/url";
+import { CoverageNotes, coverageNotesHtml, type Coverage } from "@/components/CoverageNotes";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
 interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; }
-interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; }
+interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; coverage?: Coverage | null; }
 
 const MODE_LAWS: Record<string, string> = {
   "223": "223-ФЗ · ГК РФ · ФЗ-135",
@@ -52,10 +53,12 @@ function buildHtml(r: ReviewResult): string {
     h1{font-size:15px;margin:0 0 4px} .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:600;background:#fee2e2;color:#991b1b}
     table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ccd;padding:6px 8px;text-align:left;vertical-align:top}
     th{background:#f3f5fa} .s{color:#667;font-size:10px} .q{color:#556;font-style:italic;margin-bottom:3px} .f{color:#155e3b;margin-top:3px}
-    .c{color:#3b3a6b;margin-top:3px;font-size:10px} .foot{margin-top:12px;color:#889;font-size:10px}</style></head><body>
+    .c{color:#3b3a6b;margin-top:3px;font-size:10px} .foot{margin-top:12px;color:#889;font-size:10px}
+    .cov{margin:6px 0;padding:6px 8px;border:1px solid #f0d58a;background:#fff8e6;color:#7a5200;font-size:10px}</style></head><body>
     <h1>Проверка документации на риски нарушений и обжалования</h1>
     <div>Общий риск: <span class="badge">${esc(r.overallRisk)}</span></div>
     ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
+    ${coverageNotesHtml(r.coverage, esc)}
     <table><thead><tr><th style="width:28px">№</th><th style="width:34%">Риск</th><th>Обоснование, нормы и как исправить</th></tr></thead><tbody>${rows || "<tr><td colspan=3>Риски не выявлены</td></tr>"}</tbody></table>
     <div class="foot">Сформировано в ZakupkiAI. Основания приведены со ссылками на нормы; итоговое решение принимает заказчик. Спорные моменты согласуйте с юристом.</div>
   </body></html>`;
@@ -100,7 +103,7 @@ export default function DocReviewPage() {
     setLoading(true); setResult(null);
     try {
       const { data } = await apiClient.post<ReviewResult>("/doc-review", form, {
-        headers: { "Content-Type": "multipart/form-data" }, timeout: 120000,
+        headers: { "Content-Type": "multipart/form-data" }, timeout: 300000,
       });
       setResult(data);
     } catch (e: unknown) {
@@ -169,7 +172,7 @@ export default function DocReviewPage() {
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Gavel className="mr-1.5 h-4 w-4" />}
               Проверить документацию
             </Button>
-            <p className="mt-1.5 text-xs text-muted-foreground">Проверка займёт до ~20 секунд. Поддержка: PDF, DOCX, XLSX, TXT.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Обычно до ~20 секунд; большие документы проверяются по частям — до нескольких минут. Поддержка: PDF, DOCX, XLSX, TXT.</p>
           </div>
         </Card>
 
@@ -199,6 +202,8 @@ export default function DocReviewPage() {
             </div>
 
             {result.summary && <p className="rounded-lg bg-primary-soft px-4 py-3 text-sm">{result.summary}</p>}
+
+            <CoverageNotes coverage={result.coverage} />
 
             {result.risks.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">

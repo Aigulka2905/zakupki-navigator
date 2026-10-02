@@ -87,7 +87,7 @@ import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ── Role badge ────────────────────────────────────────────────
 
@@ -891,6 +891,7 @@ function InvoicesTab() {
 function LegalRow({ doc }: { doc: LegalDocument }) {
   const ack = useLegalAck();
   const reingest = useLegalReingest();
+  const reingestFileRef = useRef<HTMLInputElement>(null);
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -931,12 +932,15 @@ function LegalRow({ doc }: { doc: LegalDocument }) {
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-1.5">
-          <input type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" onChange={onFile} id={`reingest-${doc.id}`} />
-          <Button asChild size="sm" variant="outline" className="h-7 gap-1 text-[11px]" disabled={reingest.isPending}>
-            <label htmlFor={`reingest-${doc.id}`} className="cursor-pointer">
-              {reingest.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              Загрузить обновление
-            </label>
+          {/* Тот же паттерн, что и в форме добавления: клик по ref вместо
+              label/htmlFor. Здесь у связки был и второй изъян — disabled со
+              shadcn-кнопки попадал на <label>, где этот атрибут не действует,
+              поэтому во время переигестии кнопку можно было нажать повторно. */}
+          <input ref={reingestFileRef} type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" onChange={onFile} />
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-[11px]"
+            disabled={reingest.isPending} onClick={() => reingestFileRef.current?.click()}>
+            {reingest.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            Загрузить обновление
           </Button>
           {doc.updateAvailable && (
             <Button size="sm" variant="ghost" className="h-7 text-[11px] text-muted-foreground"
@@ -958,6 +962,7 @@ function LegalCorpusTab() {
   const [showAdd, setShowAdd] = useState(false);
   const [kind, setKind] = useState<LegalKind>("norm");
   const [file, setFile] = useState<File | null>(null);
+  const addFileRef = useRef<HTMLInputElement>(null);
   const [law, setLaw] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -1089,12 +1094,17 @@ function LegalCorpusTab() {
             </div>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            <input type="file" accept=".pdf,.txt,.doc,.docx" className="hidden" id="legal-add-file"
+            {/* Открываем выбор файла кликом по ref, а не связкой label/htmlFor.
+                Метка активирует скрытый input только если id уникален во всём
+                документе и её собственный клик никто не перехватил — на этой
+                странице условие не держалось, и кнопка не реагировала. Прямой
+                вызов .click() от этого не зависит; заодно это настоящая
+                <button>, а значит корректные фокус, Enter/Space и disabled. */}
+            <input ref={addFileRef} type="file" accept=".pdf,.txt,.doc,.docx" className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            <Button asChild size="sm" variant="outline" className="h-8 gap-1 text-xs">
-              <label htmlFor="legal-add-file" className="cursor-pointer">
-                <Upload className="h-3.5 w-3.5" /> {file ? file.name : "Выбрать файл (.pdf/.txt/.docx)"}
-              </label>
+            <Button type="button" size="sm" variant="outline" className="h-8 gap-1 text-xs"
+              onClick={() => addFileRef.current?.click()}>
+              <Upload className="h-3.5 w-3.5" /> {file ? file.name : "Выбрать файл (.pdf/.txt/.docx)"}
             </Button>
             <div className="flex-1" />
             <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={resetForm} disabled={add.isPending}>Отмена</Button>

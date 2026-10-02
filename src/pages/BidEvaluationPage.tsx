@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { ProtocolDialog } from "@/components/ProtocolDialog";
+import { CoverageNotes, type Coverage } from "@/components/CoverageNotes";
 
 type Finding = string | { text: string; ref?: string };
 interface BidResult {
@@ -22,6 +23,7 @@ interface BidResult {
   recommendation: string;
   strengths: Finding[];
   weaknesses: Finding[];
+  coverage?: Coverage | null;
 }
 // Нормализует пункт к { text, ref } (поддержка старого строкового формата).
 function asFinding(f: Finding): { text: string; ref: string } {
@@ -348,6 +350,7 @@ export default function BidEvaluationPage() {
                       {!r.strengths?.length && !r.weaknesses?.length && (
                         <p className="text-xs text-muted-foreground">Детали недоступны.</p>
                       )}
+                      <CoverageNotes coverage={r.coverage} />
                     </div>
                   ))}
                 </div>

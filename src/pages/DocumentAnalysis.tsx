@@ -195,11 +195,17 @@ function ResultsPanel({ analysis, fileName, onReset }: {
         <div className="flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
-            Документ слишком большой — анализ выполнен по первым{" "}
-            <strong>{(analysis.analysisResult.analyzedLength ?? 0).toLocaleString("ru-RU")}</strong> символам
-            из <strong>{(analysis.analysisResult.originalLength ?? 0).toLocaleString("ru-RU")}</strong>.
-            Для полного анализа разбейте документ на части.
+            Документ очень большой — проанализированы первые{" "}
+            <strong>{(analysis.analysisResult.analyzedLength ?? 0).toLocaleString("ru-RU")}</strong> символов
+            из <strong>{(analysis.analysisResult.originalLength ?? 0).toLocaleString("ru-RU")}</strong>, остаток не проверен.
+            Для полного анализа загрузите оставшуюся часть отдельным документом.
           </span>
+        </div>
+      )}
+      {!analysis.analysisResult?.wasTruncated && (analysis.analysisResult?.coverage?.parts ?? 1) > 1 && (
+        <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Документ большой — проанализирован целиком по частям ({analysis.analysisResult?.coverage?.parts}).</span>
         </div>
       )}
 

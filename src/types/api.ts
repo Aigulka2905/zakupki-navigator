@@ -167,7 +167,7 @@ export interface ChatDocument {
 export interface DocumentAnalysis {
   id: string;
   originalFileName: string | null;
-  analysisResult: { textLength?: number; rawAiResponse?: string; wasTruncated?: boolean; originalLength?: number; analyzedLength?: number } | null;
+  analysisResult: { textLength?: number; rawAiResponse?: string; wasTruncated?: boolean; originalLength?: number; analyzedLength?: number; coverage?: { parts?: number; totalParts?: number; truncated?: boolean } | null } | null;
   violations: Array<{ message: string }> | null;
   recommendations: string[] | null;
   status: AnalysisStatus;

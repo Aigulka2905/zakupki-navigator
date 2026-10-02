@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { openExternal } from "@/lib/url";
+import { CoverageNotes, coverageNotesHtml, type Coverage } from "@/components/CoverageNotes";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
 interface ChecklistItem { requirement: string; status: string; detail: string; ref: string; citations?: Citation[]; confidence?: string; specMatch?: "verified" | "weak" | "unverified"; }
@@ -23,6 +24,7 @@ interface CheckResult {
   mode?: string;
   unverifiedCount?: number;
   ruleChecks?: RuleChecks;
+  coverage?: Coverage | null;
 }
 interface RuleChecks {
   missingDocuments: { id: string; label: string; presentInBid: boolean }[];
@@ -78,6 +80,7 @@ function buildReportHtml(r: CheckResult): string {
     table{width:100%;border-collapse:collapse} td{border-top:1px solid #eef;padding:6px 8px;vertical-align:top;font-size:11px}
     .st{white-space:nowrap;font-weight:600;width:110px} .ref{color:#667;font-size:10px} .d{color:#556;margin-top:2px}
     .warn{color:#92400e;background:#fef3c7;border-radius:4px;padding:0 4px;font-size:10px;font-weight:600}
+    .cov{margin:6px 0;padding:6px 8px;border:1px solid #f0d58a;background:#fff8e6;color:#7a5200;font-size:10px}
     ul{margin:4px 0;padding-left:18px} li{margin:1px 0}
     .foot{margin-top:14px;color:#889;font-size:10px;border-top:1px solid #e3e6ee;padding-top:6px}
   </style></head><body>
@@ -86,7 +89,7 @@ function buildReportHtml(r: CheckResult): string {
     ${r.summary ? `<p class="sum">${esc(r.summary)}</p>` : ""}
     <h3>Чек-лист требований</h3>
     <table>${rows || "<tr><td>—</td></tr>"}</table>
-    ${rules}${md}${rec}
+    ${coverageNotesHtml(r.coverage, esc)}${rules}${md}${rec}
     <div class="foot">Сформировано в ZakupkiAI · носит рекомендательный характер</div>
   </body></html>`;
 }
@@ -111,7 +114,7 @@ export default function BidCheckPage() {
     setResult(null);
     try {
       const { data } = await apiClient.post<CheckResult>("/bid-check", form, {
-        headers: { "Content-Type": "multipart/form-data" }, timeout: 120000,
+        headers: { "Content-Type": "multipart/form-data" }, timeout: 300000,
       });
       setResult(data);
     } catch (e: unknown) {
@@ -194,7 +197,7 @@ export default function BidCheckPage() {
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-1.5 h-4 w-4" />}
               Проверить заявку
             </Button>
-            <p className="mt-1.5 text-xs text-muted-foreground">Проверка займёт несколько секунд. Поддержка: PDF, DOCX, XLSX, TXT.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Обычно несколько секунд; большие документы проверяются по частям — до нескольких минут. Поддержка: PDF, DOCX, XLSX, TXT.</p>
           </div>
         </Card>
 
@@ -225,6 +228,8 @@ export default function BidCheckPage() {
             </div>
 
             {result.summary && <p className="rounded-lg bg-primary-soft px-4 py-3 text-sm">{result.summary}</p>}
+
+            <CoverageNotes coverage={result.coverage} />
 
             {/* Чек-лист */}
             {result.checklist.length > 0 && (

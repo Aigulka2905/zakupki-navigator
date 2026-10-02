@@ -373,7 +373,11 @@ function SessionsPanel({
       <div className="max-h-52 overflow-y-auto">
         {/* General chat sessions */}
         {generalSessions.map((s) => {
-          const to = s.sessionId ? `/chat?session=${s.sessionId}` : "/chat";
+          // Диалоги, накопленные до появления сессий, лежат с sessionId = null и
+          // открываются по «пустому» /chat. Но именно этот адрес теперь заводит
+          // НОВЫЙ чат, поэтому помечаем их явным legacy=1 — иначе переход по такой
+          // записи в истории молча открывал бы пустой чат вместо переписки.
+          const to = s.sessionId ? `/chat?session=${s.sessionId}` : "/chat?legacy=1";
           const isActive = s.sessionId ? sessionId === s.sessionId : (!sessionId && !procurementId);
           return (
             <Link
@@ -616,6 +620,27 @@ const ChatPage = () => {
     if (stored) { sessionStorage.removeItem("chat_doc_id"); return stored; }
     return searchParams.get("docId") ?? undefined;
   });
+
+  // Чистый /chat открывает НОВЫЙ диалог, а не дописывает бесконечную общую ленту:
+  // прежде все сообщения без ?session копились в одной переписке с sessionId=null,
+  // и каждый заход продолжал предыдущий разговор. Побочный эффект того поведения
+  // был неприятнее самой ленты: отказ ассистента («Я помогаю только с вопросами
+  // по госзакупкам») попадал в историю и копировался в следующие ответы.
+  //
+  // Идентификатор генерируем на клиенте и ставим в адрес через replace — без
+  // запроса к серверу и без лишней записи в истории браузера. Пустых диалогов это
+  // не плодит: список сессий строится из сообщений, поэтому сессия, в которую
+  // ничего не написали, в историю не попадает.
+  const newChatStarted = useRef(false);
+  useEffect(() => {
+    if (sessionId || procurementId) return;            // уже открыт конкретный диалог
+    if (searchParams.get("legacy")) return;            // старая переписка без сессии
+    if (newChatStarted.current) return;                // StrictMode вызывает эффект дважды
+    newChatStarted.current = true;
+    const next = new URLSearchParams(searchParams);    // сохраняем q, docId и прочие параметры
+    next.set("session", crypto.randomUUID());
+    setSearchParams(next, { replace: true });
+  }, [sessionId, procurementId, searchParams, setSearchParams]);
 
   const [input, setInput] = useState("");
   const [localMessages, setLocalMessages] = useState<
