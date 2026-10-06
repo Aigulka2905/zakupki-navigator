@@ -9,7 +9,7 @@ import {
   Send, FileCheck2, Scale, CalendarClock, Sparkles, Bot,
   Loader2, Building2, ExternalLink, MessageSquare, BookOpen,
   Copy, Check, Clock, ChevronRight, TrendingUp, AlertTriangle,
-  FileText, Zap, Plus, Paperclip, X, CheckCircle2, XCircle,
+  FileText, Zap, Plus, Paperclip, X, CheckCircle2, XCircle, MousePointerClick,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
@@ -57,6 +57,8 @@ async function sendMessage(payload: {
   sessionId?: string;
   procurementId?: string;
   docId?: string;
+  // «Вопрос по работе на площадке»: ответ только по инструкциям «Торги РФ» со скриншотами.
+  topic?: "platform";
 }): Promise<ChatResponse> {
   const { data } = await apiClient.post<ChatResponse>("/assistant/chat", payload);
   return data;
@@ -154,10 +156,12 @@ function EmptyState({
   procurement,
   quickActions,
   onSelect,
+  onPlatform,
 }: {
   procurement?: Procurement;
   quickActions: QuickAction[];
   onSelect: (text: string) => void;
+  onPlatform: () => void;
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-4 text-center">
@@ -201,6 +205,24 @@ function EmptyState({
           </button>
         ))}
       </div>
+
+      {/* Вопрос по работе на площадке: включает режим инструкций «Торги РФ» */}
+      <button
+        type="button"
+        onClick={onPlatform}
+        className="group flex w-full max-w-lg items-center gap-3 rounded-xl p-4 text-left ring-1 ring-inset ring-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 transition-all duration-150"
+      >
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15">
+          <MousePointerClick className="h-4 w-4 text-indigo-400" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-foreground">Вопрос по работе на площадке</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground/70 leading-tight">
+            Как подать заявку, найти протокол, подписать договор — пошагово со скриншотами «Торги РФ»
+          </div>
+        </div>
+        <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-indigo-400/60 group-hover:text-indigo-400 transition-colors" />
+      </button>
     </div>
   );
 }
@@ -211,10 +233,12 @@ function ContextCard({
   procurement,
   knowledgeDoc,
   historyLoading,
+  platformMode,
 }: {
   procurement?: Procurement;
   knowledgeDoc?: Document;
   historyLoading: boolean;
+  platformMode: boolean;
 }) {
   if (procurement) {
     const days = Math.floor((new Date(procurement.applicationDeadline).getTime() - Date.now()) / 86_400_000);
@@ -301,7 +325,7 @@ function ContextCard({
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">Режим</span>
       </div>
       <div className="space-y-2">
-        <div className="text-[13px] font-semibold text-foreground">223-ФЗ / 44-ФЗ</div>
+        <div className="text-[13px] font-semibold text-foreground">{platformMode ? "Работа на площадке «Торги РФ»" : "223-ФЗ / 44-ФЗ"}</div>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
           {historyLoading ? "Загрузка..." : "Ассистент готов"}
@@ -311,13 +335,27 @@ function ContextCard({
   );
 }
 
-function QuickActionsPanel({ actions, onSelect }: { actions: QuickAction[]; onSelect: (text: string) => void }) {
+function QuickActionsPanel({ actions, onSelect, onPlatform }: { actions: QuickAction[]; onSelect: (text: string) => void; onPlatform: () => void }) {
   return (
     <div className="rounded-xl border border-border/40 bg-card/40 p-3">
       <div className="mb-2.5 px-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/50">
         Быстрые вопросы
       </div>
       <div className="space-y-1">
+        <button
+          type="button"
+          onClick={onPlatform}
+          className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all hover:bg-indigo-500/5"
+        >
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10">
+            <MousePointerClick className="h-3.5 w-3.5 text-indigo-400" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-foreground truncate">Работа на площадке</div>
+            <div className="text-[10px] text-muted-foreground/50 truncate">Инструкции «Торги РФ» со скриншотами</div>
+          </div>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30 group-hover:text-indigo-400 transition-colors" />
+        </button>
         {actions.map((q) => (
           <button
             key={q.label}
@@ -648,6 +686,8 @@ const ChatPage = () => {
   >([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Режим «Вопрос по работе на площадке»: ответы только по инструкциям «Торги РФ».
+  const [platformMode, setPlatformMode] = useState(false);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const autoQueryRef  = useRef(searchParams.get('q') ?? '');
   const autoSentRef   = useRef(false);
@@ -781,7 +821,13 @@ const ChatPage = () => {
     const text = input.trim();
     if (!text || isSending) return;
     setInput("");
-    sendMsg({ message: text, sessionId, procurementId, docId });
+    sendMsg({ message: text, sessionId, procurementId, docId, ...(platformMode ? { topic: "platform" as const } : {}) });
+  };
+
+  // Включить режим «Вопрос по работе на площадке» и поставить курсор в поле ввода.
+  const enablePlatformMode = () => {
+    setPlatformMode(true);
+    textareaRef.current?.focus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -844,7 +890,7 @@ const ChatPage = () => {
 
   const pageSubtitle = isSending
     ? "Думает..."
-    : `Онлайн · ${procurement ? `Закупка №${procurement.number}` : "Режим 223-ФЗ / 44-ФЗ"}`;
+    : `Онлайн · ${procurement ? `Закупка №${procurement.number}` : platformMode ? "Режим: работа на площадке «Торги РФ»" : "Режим 223-ФЗ / 44-ФЗ"}`;
 
   return (
     <AppLayout title={pageTitle} subtitle={pageSubtitle}>
@@ -872,6 +918,7 @@ const ChatPage = () => {
                 procurement={procurement}
                 quickActions={quickActions}
                 onSelect={(text) => { setInput(text); textareaRef.current?.focus(); }}
+                onPlatform={enablePlatformMode}
               />
             ) : (
               localMessages.map((m) =>
@@ -932,6 +979,29 @@ const ChatPage = () => {
               </div>
             )}
 
+            {/* Режим «Вопрос по работе на площадке» */}
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPlatformMode((v) => !v)}
+                aria-pressed={platformMode}
+                title="Ответ — по инструкциям площадки «Торги РФ», со скриншотами шагов"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-all",
+                  platformMode
+                    ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-500"
+                    : "border-border/50 text-muted-foreground/70 hover:border-indigo-500/30 hover:text-indigo-400",
+                )}
+              >
+                <MousePointerClick className="h-3.5 w-3.5" />
+                Вопрос по работе на площадке
+                {platformMode && <X className="h-3 w-3 opacity-70" />}
+              </button>
+              {platformMode && (
+                <span className="text-[10px] text-muted-foreground/60">Ответ — по инструкциям «Торги РФ» со скриншотами</span>
+              )}
+            </div>
+
             {/* Textarea + send */}
             <div className={cn(
               "flex items-end gap-2 rounded-xl border bg-background/50 px-3 py-3 transition-all",
@@ -969,7 +1039,9 @@ const ChatPage = () => {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  procurement
+                  platformMode
+                    ? "Как сделать на площадке: подать заявку, найти протокол, подписать договор…"
+                    : procurement
                     ? `Спросите про закупку №${procurement.number}...`
                     : knowledgeDoc
                     ? `Спросите про документ «${knowledgeDoc.title.slice(0, 30)}...»`
@@ -1003,7 +1075,9 @@ const ChatPage = () => {
 
             {/* Footer hint */}
             <p className="mt-2 text-center text-[10px] text-muted-foreground/30">
-              Ответы сверяются с нормами 223-ФЗ и 44-ФЗ · Shift+Enter — новая строка
+              {platformMode
+                ? "Ответы — по инструкциям площадки «Торги РФ» · Shift+Enter — новая строка"
+                : "Ответы сверяются с нормами 223-ФЗ и 44-ФЗ · Shift+Enter — новая строка"}
             </p>
           </div>
         </div>
@@ -1015,12 +1089,14 @@ const ChatPage = () => {
             procurement={procurement}
             knowledgeDoc={knowledgeDoc}
             historyLoading={historyLoading}
+            platformMode={platformMode}
           />
 
           {/* Quick actions */}
           <QuickActionsPanel
             actions={quickActions}
             onSelect={(text) => { setInput(text); textareaRef.current?.focus(); }}
+            onPlatform={enablePlatformMode}
           />
 
           {/* Chat documents (RAG) */}
