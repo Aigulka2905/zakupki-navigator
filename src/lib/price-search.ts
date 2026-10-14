@@ -1,6 +1,6 @@
 // «Цены в магазинах»: типы ответа /api/price-search и форматирование.
 
-export type StoreStatus = "ok" | "empty" | "pending" | "unavailable" | "not_connected" | "no_pricelist";
+export type StoreStatus = "ok" | "empty" | "too_broad" | "pending" | "unavailable" | "not_connected" | "no_pricelist";
 
 export interface StoreOffer {
   name: string;
@@ -20,6 +20,7 @@ export interface StoreResult {
   priceDate?: string;
   stale?: boolean; // прайсу больше 30 дней
   similar?: boolean; // точных совпадений нет — показаны похожие товары
+  suggestions?: string[]; // too_broad: разделы, которые показал магазин
   cached?: boolean;
 }
 
@@ -33,6 +34,7 @@ export interface PriceSearchResult {
 export const STATUS_TEXT: Record<Exclude<StoreStatus, "ok">, string> = {
   pending: "ищем…",
   empty: "ничего не найдено",
+  too_broad: "запрос слишком общий — уточните наименование",
   unavailable: "временно недоступен",
   not_connected: "пока не подключён",
   no_pricelist: "прайс не загружен",

@@ -32,6 +32,9 @@ function StoreRows({ store: s }: { store: StoreResult }) {
               </span>
             )}
           </div>
+          {s.status === "too_broad" && !!s.suggestions?.length && (
+            <p className="mt-1 text-xs text-muted-foreground">Разделы магазина: {s.suggestions.join(", ")}</p>
+          )}
         </TableCell>
       </TableRow>
       {s.status === "ok" && s.offers.map((o) => (

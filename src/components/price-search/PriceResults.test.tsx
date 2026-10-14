@@ -76,4 +76,14 @@ describe("PriceResults", () => {
     expect(screen.getByText("Точных совпадений не найдено")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull();
   });
+
+  it("общий запрос: магазин показал разделы — «уточните» и названия подразделов", () => {
+    const result: PriceSearchResult = {
+      status: "completed", query: "кресло офисное", startedAt: 0,
+      stores: [{ store: "officemag", title: "ОфисМаг", status: "too_broad", offers: [], suggestions: ["Кресла для руководителей", "Кресла для персонала"] }],
+    };
+    render(<PriceResults result={result} />);
+    expect(screen.getByText("запрос слишком общий — уточните наименование")).toBeInTheDocument();
+    expect(screen.getByText("Разделы магазина: Кресла для руководителей, Кресла для персонала")).toBeInTheDocument();
+  });
 });
