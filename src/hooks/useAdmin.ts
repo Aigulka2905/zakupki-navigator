@@ -307,6 +307,38 @@ export function useEisIngest() {
   });
 }
 
+// ── «Цены в магазинах»: прайс-лист Комуса ──
+export interface StorePriceInfo {
+  priceDate: string;
+  itemsCount: number;
+  fileName?: string | null;
+  uploadedBy?: string | null;
+  uploadedAt: string;
+}
+export interface StorePriceUploadResult { itemsCount: number; skipped: number; priceDate: string; fileName: string | null }
+export function useStorePrices() {
+  return useQuery({
+    queryKey: ["admin-store-prices"],
+    queryFn: () => apiClient.get<{ komus: StorePriceInfo | null }>("/admin/store-prices").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+export function useUploadKomusPricelist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      // 41 тыс. товаров: разбор и замена прайса в одной транзакции — до пары минут.
+      return apiClient.post<StorePriceUploadResult>("/admin/store-prices/komus", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 300_000,
+      }).then((r) => r.data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-store-prices"] }),
+  });
+}
+
 export function useResetModelLimit() {
   const qc = useQueryClient();
   return useMutation({
