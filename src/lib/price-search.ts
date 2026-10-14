@@ -1,0 +1,59 @@
+// «Цены в магазинах»: типы ответа /api/price-search и форматирование.
+
+export type StoreStatus = "ok" | "empty" | "pending" | "unavailable" | "not_connected" | "no_pricelist";
+
+export interface StoreOffer {
+  name: string;
+  price: number;
+  unit: string | null;
+  stock: string | null;
+  url: string;
+  priceDate: string; // YYYY-MM-DD
+  note: string | null;
+}
+
+export interface StoreResult {
+  store: string;
+  title: string;
+  status: StoreStatus;
+  offers: StoreOffer[];
+  priceDate?: string;
+  stale?: boolean; // прайсу больше 30 дней
+  similar?: boolean; // точных совпадений нет — показаны похожие товары
+  cached?: boolean;
+}
+
+export interface PriceSearchResult {
+  status: "processing" | "completed";
+  query: string;
+  startedAt: number;
+  stores: StoreResult[];
+}
+
+export const STATUS_TEXT: Record<Exclude<StoreStatus, "ok">, string> = {
+  pending: "ищем…",
+  empty: "ничего не найдено",
+  unavailable: "временно недоступен",
+  not_connected: "пока не подключён",
+  no_pricelist: "прайс не загружен",
+};
+
+export const formatRub = (n: number) => `${n.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
+
+// Ссылку на товар рисуем только для http(s): адрес приходит со стороннего сайта.
+export const isHttpUrl = (url: string) => /^https?:\/\//i.test(url);
+
+// «2026-10-13» → «13.10.2026» без Date: дата прайса — календарная, часовой пояс не нужен.
+export const formatDate = (iso: string) => iso.slice(0, 10).split("-").reverse().join(".");
+
+/** Минимальная цена среди найденных товаров. «Похожие» (это другой товар) не участвуют. */
+export function overallMin(stores: StoreResult[]): { price: number; title: string } | null {
+  let best: { price: number; title: string } | null = null;
+  for (const s of stores) {
+    if (s.status !== "ok" || s.similar) continue;
+    for (const o of s.offers) {
+      if (!best || o.price < best.price) best = { price: o.price, title: s.title };
+    }
+  }
+  return best;
+}

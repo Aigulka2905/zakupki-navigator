@@ -22,6 +22,7 @@ import {
   FileCheck2,
   ShieldAlert,
   Gavel,
+  ShoppingCart,
 } from "lucide-react";
 import { useUnreadCount } from "@/hooks/useNotifications";
 import { tokenStorage } from "@/lib/auth";
@@ -157,6 +158,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Проверка документации", url: "/doc-review",            icon: Gavel },
         { title: "Анализ заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
+        { title: "Цены в магазинах",     url: "/price-search",           icon: ShoppingCart },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
         { title: "Массовая проверка",   url: "/batch-check",            icon: ShieldAlert },
