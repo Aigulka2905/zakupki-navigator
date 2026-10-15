@@ -87,6 +87,7 @@ import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
+import { KomusPricelistCard } from "@/components/admin/KomusPricelistCard";
 import { useState, useEffect, useRef } from "react";
 
 // ── Role badge ────────────────────────────────────────────────
@@ -671,6 +672,7 @@ function ParametersTab() {
       </div>
 
       <EisIngestCard />
+      <KomusPricelistCard />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <InfoCard
