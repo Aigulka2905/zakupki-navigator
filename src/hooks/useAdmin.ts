@@ -311,16 +311,38 @@ export function useEisIngest() {
 export interface StorePriceInfo {
   priceDate: string;
   itemsCount: number;
+  source?: "file" | "api" | null;
   fileName?: string | null;
   uploadedBy?: string | null;
   uploadedAt: string;
+}
+export interface KomusSyncStatus {
+  state: "running" | "done" | "failed";
+  startedAt?: string;
+  finishedAt?: string;
+  itemsCount?: number;
+  skipped?: number;
+  error?: string;
+}
+export interface StorePricesInfo {
+  komus: StorePriceInfo | null;
+  api?: { configured: boolean; sync: KomusSyncStatus | null };
 }
 export interface StorePriceUploadResult { itemsCount: number; skipped: number; priceDate: string; fileName: string | null }
 export function useStorePrices() {
   return useQuery({
     queryKey: ["admin-store-prices"],
-    queryFn: () => apiClient.get<{ komus: StorePriceInfo | null }>("/admin/store-prices").then((r) => r.data),
+    queryFn: () => apiClient.get<StorePricesInfo>("/admin/store-prices").then((r) => r.data),
     staleTime: 30_000,
+    // Пока идёт обновление из API (около 3 минут) — опрашиваем статус.
+    refetchInterval: (query) => (query.state.data?.api?.sync?.state === "running" ? 5_000 : false),
+  });
+}
+export function useSyncKomusApi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post<{ queued: boolean }>("/admin/store-prices/komus/sync").then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-store-prices"] }),
   });
 }
 export function useUploadKomusPricelist() {
