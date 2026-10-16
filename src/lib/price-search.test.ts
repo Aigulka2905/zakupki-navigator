@@ -8,9 +8,15 @@ describe("overallMin", () => {
     const stores: StoreResult[] = [
       { store: "komus", title: "Комус", status: "ok", offers: [offer(462), offer(384)] },
       { store: "officemag", title: "ОфисМаг", status: "ok", offers: [offer(394)] },
-      { store: "ymarket", title: "Яндекс Маркет", status: "not_connected", offers: [] },
     ];
     expect(overallMin(stores)).toEqual({ price: 384, title: "Комус" });
+  });
+
+  it("предложение, не подходящее по словам (match: false), в минимум не идёт", () => {
+    const stores: StoreResult[] = [
+      { store: "officemag", title: "ОфисМаг", status: "ok", offers: [{ ...offer(140), match: true }, { ...offer(53.9), match: false }] },
+    ];
+    expect(overallMin(stores)).toEqual({ price: 140, title: "ОфисМаг" });
   });
 
   it("«похожие» и магазины без результата не участвуют; ничего нет — null", () => {
