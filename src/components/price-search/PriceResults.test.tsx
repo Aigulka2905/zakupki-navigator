@@ -13,13 +13,12 @@ const omOffer: StoreOffer = {
 };
 
 describe("PriceResults", () => {
-  it("группы по магазинам: товары со ссылками, «ищем…», «пока не подключён», устаревший прайс, общий минимум", () => {
+  it("группы по магазинам: товары со ссылками, «ищем…», устаревший прайс, общий минимум", () => {
     const result: PriceSearchResult = {
       status: "processing", query: "бумага а4 svetocopy", startedAt: 0,
       stores: [
         { store: "komus", title: "Комус", status: "ok", similar: false, stale: true, priceDate: "2026-08-01", offers: [komusOffer] },
         { store: "officemag", title: "ОфисМаг", status: "pending", offers: [] },
-        { store: "ymarket", title: "Яндекс Маркет", status: "not_connected", offers: [] },
       ],
     };
     render(<PriceResults result={result} />);
@@ -30,7 +29,6 @@ describe("PriceResults", () => {
     expect(screen.getByText("прайс от 01.08.2026 · базовая цена")).toBeInTheDocument();
     expect(screen.getByText("мог устареть")).toBeInTheDocument();
     expect(screen.getByText("ищем…")).toBeInTheDocument();
-    expect(screen.getByText("пока не подключён")).toBeInTheDocument();
     expect(screen.getByText("от 462 ₽")).toBeInTheDocument();
   });
 
@@ -40,7 +38,6 @@ describe("PriceResults", () => {
       stores: [
         { store: "komus", title: "Комус", status: "ok", similar: true, priceDate: "2026-10-13", offers: [{ ...komusOffer, price: 100 }] },
         { store: "officemag", title: "ОфисМаг", status: "ok", priceDate: "2026-10-13", offers: [omOffer] },
-        { store: "ymarket", title: "Яндекс Маркет", status: "not_connected", offers: [] },
       ],
     };
     render(<PriceResults result={result} />);
@@ -67,7 +64,6 @@ describe("PriceResults", () => {
       stores: [
         { store: "komus", title: "Комус", status: "no_pricelist", offers: [] },
         { store: "officemag", title: "ОфисМаг", status: "unavailable", offers: [] },
-        { store: "ymarket", title: "Яндекс Маркет", status: "not_connected", offers: [] },
       ],
     };
     render(<PriceResults result={result} />);

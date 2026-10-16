@@ -1,6 +1,6 @@
 // «Цены в магазинах»: типы ответа /api/price-search и форматирование.
 
-export type StoreStatus = "ok" | "empty" | "too_broad" | "pending" | "unavailable" | "not_connected" | "no_pricelist";
+export type StoreStatus = "ok" | "empty" | "too_broad" | "pending" | "unavailable" | "no_pricelist";
 
 export interface StoreOffer {
   name: string;
@@ -10,6 +10,7 @@ export interface StoreOffer {
   url: string;
   priceDate: string; // YYYY-MM-DD
   note: string | null;
+  rrcPrice?: number | null; // Комус: рекомендованная розничная цена (в выгрузке списка — отдельной колонкой)
 }
 
 export interface StoreResult {
@@ -36,7 +37,6 @@ export const STATUS_TEXT: Record<Exclude<StoreStatus, "ok">, string> = {
   empty: "ничего не найдено",
   too_broad: "запрос слишком общий — уточните наименование",
   unavailable: "временно недоступен",
-  not_connected: "пока не подключён",
   no_pricelist: "прайс не загружен",
 };
 
