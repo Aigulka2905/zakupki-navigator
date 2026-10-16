@@ -2,6 +2,7 @@ import { ExternalLink, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { SimilarBadge } from "./SimilarBadge";
 import { formatDate, formatRub, isHttpUrl, overallMin, STATUS_TEXT, type PriceSearchResult, type StoreResult } from "@/lib/price-search";
 
 // Подпись группы: откуда цена и на какую дату.
@@ -48,8 +49,9 @@ function StoreRows({ store: s }: { store: StoreResult }) {
             ) : (
               o.name
             )}
+            {o.match === false && <SimilarBadge />}
           </TableCell>
-          <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatRub(o.price)}</TableCell>
+          <TableCell className={cn("whitespace-nowrap text-right font-medium tabular-nums", o.match === false && "text-muted-foreground")}>{formatRub(o.price)}</TableCell>
           <TableCell className="text-muted-foreground">{o.unit ?? "—"}</TableCell>
           <TableCell className="text-xs text-muted-foreground">{o.stock ?? "—"}</TableCell>
           <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(o.priceDate)}</TableCell>

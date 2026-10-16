@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { PriceResults } from "./PriceResults";
 import type { PriceSearchResult, StoreOffer } from "@/lib/price-search";
 
@@ -46,6 +46,22 @@ describe("PriceResults", () => {
     expect(screen.getByText(/\(ОфисМаг\)/)).toBeInTheDocument();
     expect(screen.getByText("цены на сайте на 13.10.2026")).toBeInTheDocument();
     expect(screen.getByText("от 5 шт. — 344 ₽")).toBeInTheDocument();
+  });
+
+  it("предложение, не подходящее по словам, помечено «похожие» и не идёт в минимум", () => {
+    const result: PriceSearchResult = {
+      status: "completed", query: "клей момент супер", startedAt: 0,
+      stores: [{ store: "officemag", title: "ОфисМаг", status: "ok", priceDate: "2026-10-16", offers: [
+        { ...omOffer, name: "Клей Момент Супер, 3 г", price: 140, match: true },
+        { ...omOffer, name: "Крем защитный 100 мл, АЛИРАНТА", price: 53.9, match: false },
+      ] }],
+    };
+    render(<PriceResults result={result} />);
+    expect(screen.getByText("от 140 ₽")).toBeInTheDocument();
+    const cream = screen.getByText("Крем защитный 100 мл, АЛИРАНТА").closest("tr") as HTMLElement;
+    expect(within(cream).getByText("похожие")).toBeInTheDocument();
+    const glue = screen.getByText("Клей Момент Супер, 3 г").closest("tr") as HTMLElement;
+    expect(within(glue).queryByText("похожие")).toBeNull();
   });
 
   it("адрес не http(s) — название без ссылки", () => {

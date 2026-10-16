@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { formatDate, formatRub, isHttpUrl, STATUS_TEXT, type StoreResult, type StoreStatus } from "@/lib/price-search";
 import { batchTotal, pickOffer, positionMin, positionSum, type BatchChoices, type BatchPosition } from "@/lib/price-batch";
 import { saveBatchTemplate, saveBatchXlsx, usePriceBatch } from "@/hooks/usePriceBatch";
+import { SimilarBadge } from "./SimilarBadge";
 
 const STORE_COLUMNS = [
   { store: "komus", title: "Комус" },
@@ -49,9 +50,7 @@ function StoreCell({ s, choice }: { s?: StoreResult; choice?: number }) {
     <TableCell className="max-w-xs">
       <div className={cn("whitespace-nowrap font-medium tabular-nums", !pick.counted && "text-muted-foreground")}>
         {formatRub(pick.offer.price)}
-        {!pick.counted && (
-          <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-normal text-amber-700 dark:text-amber-400">похожие</span>
-        )}
+        {!pick.counted && <SimilarBadge />}
       </div>
       <OfferLink name={pick.offer.name} url={pick.offer.url} className="text-xs text-muted-foreground" />
     </TableCell>
@@ -80,7 +79,10 @@ function VariantsRow({ p, choice, onChoose }: { p: BatchPosition; choice?: Recor
                       const chosen = !!pick?.counted && pick.index === i;
                       return (
                         <li key={`${o.url}|${i}`} className="flex items-start justify-between gap-2 text-xs">
-                          <OfferLink name={o.name} url={o.url} />
+                          <span>
+                            <OfferLink name={o.name} url={o.url} />
+                            {o.match === false && <SimilarBadge />}
+                          </span>
                           <span className="flex shrink-0 items-center gap-2">
                             <span className="font-medium tabular-nums">{formatRub(o.price)}</span>
                             <Button

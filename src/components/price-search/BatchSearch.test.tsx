@@ -18,7 +18,10 @@ const BATCH: PriceBatch = {
   positions: [
     { n: 1, name: "Бумага А4", qty: 10, unit: "пачка", stores: [
       { store: "komus", title: "Комус", status: "ok", priceDate: "2026-08-01", stale: true, offers: [offer("Бумага SvetoCopy А4", 462)] },
-      { store: "officemag", title: "ОфисМаг", status: "ok", offers: [offer("Бумага офисная SvetoCopy", 394, "https://www.officemag.ru/catalog/goods/110086/")] },
+      { store: "officemag", title: "ОфисМаг", status: "ok", offers: [
+        { ...offer("Бумага офисная SvetoCopy", 394, "https://www.officemag.ru/catalog/goods/110086/"), match: true },
+        { ...offer("Крем защитный 100 мл, АЛИРАНТА", 53.9, "https://www.officemag.ru/catalog/goods/1/"), match: false },
+      ] },
     ] },
     { n: 2, name: "Ластик", qty: 3, unit: null, stores: [
       { store: "komus", title: "Комус", status: "ok", similar: true, offers: [offer("Ластик Koh-i-Noor", 100), offer("Ластик Faber-Castell", 90)] },
@@ -82,6 +85,16 @@ describe("BatchSearch", () => {
     expect(screen.getByText("пропущена: наименование короче 3 символов")).toBeInTheDocument();
     expect(screen.getByText(/с ценой: 2 из 5/)).toBeInTheDocument();
     expect(screen.getByText(/без количества: 1 — в итог не вошли/)).toBeInTheDocument();
+  });
+
+  it("в вариантах неподходящее по словам предложение помечено «похожие»; минимум — по подходящему", () => {
+    renderAt();
+    expect(within(row("Бумага А4")).getAllByText("394 ₽")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Варианты: Бумага А4" }));
+    const cream = screen.getByRole("link", { name: /Крем защитный/ }).closest("li") as HTMLElement;
+    expect(within(cream).getByText("похожие")).toBeInTheDocument();
+    const paper = screen.getAllByRole("link", { name: /Бумага офисная SvetoCopy/ }).map((el) => el.closest("li")).find(Boolean) as HTMLElement;
+    expect(within(paper).queryByText("похожие")).toBeNull();
   });
 
   it("общий запрос: «уточните», разделы магазина — в раскрытой строке", () => {
