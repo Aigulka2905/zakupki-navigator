@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, ShieldAlert, AlertTriangle, CheckCircle2, Printer, Gavel, Quote, Wrench, Scale,
 } from "lucide-react";
+import axios from "axios";
 import apiClient from "@/lib/api-client";
 import { openExternal } from "@/lib/url";
 import { CoverageNotes, coverageNotesHtml, type Coverage } from "@/components/CoverageNotes";
@@ -83,6 +84,7 @@ export default function DocReviewPage() {
   const [mode, setMode] = useState<Mode>("223");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [record, setRecord] = useState<AnalysisRecord | null>(null);
   const pkg = usePackageUpload("doc_review");
 
@@ -90,18 +92,26 @@ export default function DocReviewPage() {
   // после запуска. Пока идёт обработка — опрашиваем статус каждые 3 с.
   useEffect(() => {
     setRecord(null);
+    setLoadError(null);
     if (!analysisId) return;
     let cancelled = false;
+    let loaded = false;
     let timer: number | undefined;
     const load = async () => {
       try {
         const { data } = await apiClient.get<AnalysisRecord>(`/analysis/${analysisId}`);
         if (cancelled) return;
+        loaded = true;
+        setLoadError(null);
         setRecord(data);
         if (data.analysisResult?.mode) setMode(data.analysisResult.mode as Mode);
         if (data.status === "processing") timer = window.setTimeout(load, 3000);
       } catch {
-        if (!cancelled) setError("Не удалось загрузить проверку");
+        if (cancelled) return;
+        // Уже показываем запись — сбой опроса считаем временным и пробуем снова;
+        // ошибку показываем, только если записи нет вовсе.
+        if (loaded) timer = window.setTimeout(load, 3000);
+        else setLoadError("Не удалось загрузить проверку");
       }
     };
     void load();
@@ -120,8 +130,14 @@ export default function DocReviewPage() {
     } catch (e: unknown) {
       // Ошибка запуска (в т.ч. «не удалось убрать удалённые файлы») — остаёмся на
       // шаге загрузки, список файлов не трогаем: можно повторить запуск.
-      const err = e as { response?: { data?: { error?: string } }; message?: string };
-      setError(err.response?.data?.error ?? (err.response ? null : err.message) ?? "Не удалось запустить проверку");
+      // Текст axios («Network Error», «timeout of …») английский — подменяем русским;
+      // Error.message показываем только для собственных ошибок (например, хука).
+      if (axios.isAxiosError(e)) {
+        const serverText = (e.response?.data as { error?: string } | undefined)?.error;
+        setError(serverText ?? (e.response ? "Не удалось запустить проверку" : "Нет связи с сервером — проверьте подключение и повторите запуск."));
+      } else {
+        setError(e instanceof Error && e.message ? e.message : "Не удалось запустить проверку");
+      }
     } finally {
       setStarting(false);
     }
@@ -190,10 +206,18 @@ export default function DocReviewPage() {
           </div>
         </Card>
 
-        {analysisId && !record && !error && (
+        {analysisId && !record && !loadError && (
           <Card className="p-6">
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Загружаем проверку…
+            </div>
+          </Card>
+        )}
+
+        {loadError && (
+          <Card className="p-6">
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{loadError}</span>
             </div>
           </Card>
         )}
