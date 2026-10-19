@@ -158,6 +158,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         { title: "Анализ заявок",        url: "/bid-evaluation",         icon: ClipboardCheck },
         { title: "Обоснование НМЦ",      url: "/nmck",                   icon: Calculator },
         { title: "Календарь дедлайнов", url: "/calendar",               icon: Calendar },
+        { title: "Уведомления",          url: "/notifications",          icon: Bell },
         { title: "Проверка контрагента", url: "/check-supplier",         icon: UserSearch },
         { title: "Массовая проверка",   url: "/batch-check",            icon: ShieldAlert },
         { title: "Национальный режим",  url: "/national-regime",        icon: Flag },
@@ -260,7 +261,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
               item={item}
               collapsed={collapsed}
               active={isNavActive(item.url)}
-              badge={item.url === "/notifications" && !isCustomer ? unreadCount : undefined}
+              badge={item.url === "/notifications" ? unreadCount : undefined}
             />
           ))}
         </div>
