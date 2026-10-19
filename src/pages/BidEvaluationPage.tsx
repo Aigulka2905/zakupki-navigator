@@ -1,17 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import axios from "axios";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Upload, FileText, Loader2, Printer, CheckCircle2, AlertTriangle,
+  FileText, Loader2, Printer, CheckCircle2, AlertTriangle,
   XCircle, ClipboardCheck, FileCheck2, Clock, Plus, Trash2, Users,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
 import { ProtocolDialog } from "@/components/ProtocolDialog";
 import { CoverageNotes, type Coverage } from "@/components/CoverageNotes";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { PackageUploader } from "@/components/PackageUploader";
+import { JobProgressCard } from "@/components/JobProgressCard";
+import { usePackageUpload } from "@/hooks/usePackageUpload";
+import { freeSlot } from "@/lib/package-upload";
+import type { JobProgress } from "@/types/api";
 
 type Finding = string | { text: string; ref?: string };
 interface BidResult {
@@ -31,9 +37,10 @@ function asFinding(f: Finding): { text: string; ref: string } {
   if (typeof f === "string") return { text: f, ref: "" };
   return { text: f?.text ?? "", ref: f?.ref ?? "" };
 }
-interface Participant {
+// slot — номер участника в пакете (0–19): по нему сервер сопоставляет файлы и имя.
+interface ParticipantSlot {
+  slot: number;
   name: string;
-  files: File[];
 }
 interface Evaluation {
   id: string;
@@ -44,6 +51,7 @@ interface Evaluation {
   specFileName?: string;
   results?: BidResult[];
   createdAt: string;
+  progress?: JobProgress | null;
 }
 interface HistoryItem {
   id: string; title: string; status: Evaluation["status"]; bidCount: number; createdAt: string;
@@ -68,23 +76,31 @@ const PRINT_CSS = `
 export default function BidEvaluationPage() {
   const { data: currentUser } = useCurrentUser();
   const isCustomer = currentUser?.organization?.orgType === "customer";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const evaluationId = searchParams.get("id");
   const [title, setTitle] = useState("");
-  const [specFiles, setSpecFiles] = useState<File[]>([]);
-  const [participants, setParticipants] = useState<Participant[]>([{ name: "", files: [] }]);
-  const [uploading, setUploading] = useState(false);
+  const [participants, setParticipants] = useState<ParticipantSlot[]>([{ slot: 0, name: "" }]);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const pkg = usePackageUpload("bid_evaluation");
 
-  const addParticipant = () => setParticipants((p) => [...p, { name: "", files: [] }]);
-  const removeParticipant = (i: number) => setParticipants((p) => p.length > 1 ? p.filter((_, j) => j !== i) : p);
-  const setParticipantName = (i: number, name: string) =>
-    setParticipants((p) => p.map((x, j) => (j === i ? { ...x, name } : x)));
-  const setParticipantFiles = (i: number, files: File[]) =>
-    setParticipants((p) => p.map((x, j) => (j === i ? { ...x, files } : x)));
+  const addParticipant = () => {
+    const slot = freeSlot(participants.map((p) => p.slot));
+    if (slot == null) { setError("Не больше 20 участников за один раз"); return; }
+    setParticipants((p) => [...p, { slot, name: "" }]);
+  };
+  const removeParticipant = (slot: number) => {
+    if (participants.length <= 1) return;
+    pkg.removeParticipant(slot); // файлы участника — с сервера тоже
+    setParticipants((p) => p.filter((x) => x.slot !== slot));
+  };
+  const setParticipantName = (slot: number, name: string) =>
+    setParticipants((p) => p.map((x) => (x.slot === slot ? { ...x, name } : x)));
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [current, setCurrent] = useState<Evaluation | null>(null);
   const [protocolOpen, setProtocolOpen] = useState(false);
-  const pollRef = useRef<number | null>(null);
 
   const loadHistory = async () => {
     try {
@@ -93,51 +109,67 @@ export default function BidEvaluationPage() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => {
-    loadHistory();
-    return () => { if (pollRef.current) window.clearTimeout(pollRef.current); };
-  }, []);
+  useEffect(() => { loadHistory(); }, []);
 
-  const openEvaluation = async (id: string) => {
-    if (pollRef.current) window.clearTimeout(pollRef.current);
-    try {
-      const { data } = await apiClient.get<Evaluation>(`/bid-evaluation/${id}`);
-      setCurrent(data);
-      if (data.status === "processing") {
-        pollRef.current = window.setTimeout(() => openEvaluation(id), 1500);
-      } else {
-        loadHistory();
+  // Открытый анализ (/bid-evaluation?id=…) — из «Истории», уведомления или сразу после
+  // запуска. Пока идёт обработка — опрашиваем статус каждые 3 с.
+  useEffect(() => {
+    setCurrent(null);
+    setLoadError(null);
+    if (!evaluationId) return;
+    let cancelled = false;
+    let loaded = false;
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const { data } = await apiClient.get<Evaluation>(`/bid-evaluation/${evaluationId}`);
+        if (cancelled) return;
+        loaded = true;
+        setLoadError(null);
+        setCurrent(data);
+        if (data.status === "processing") timer = window.setTimeout(load, 3000);
+        else loadHistory();
+      } catch {
+        if (cancelled) return;
+        // Запись уже показана — сбой опроса считаем временным и пробуем снова;
+        // ошибку показываем, только если записи нет вовсе.
+        if (loaded) timer = window.setTimeout(load, 3000);
+        else setLoadError("Не удалось загрузить оценку");
       }
-    } catch {
-      setError("Не удалось загрузить оценку");
-    }
-  };
+    };
+    void load();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [evaluationId]);
 
   const submit = async () => {
     setError(null);
-    if (specFiles.length === 0) { setError("Загрузите документацию закупки (ТЗ)"); return; }
-    const filled = participants.filter((p) => p.files.length > 0);
-    if (filled.length === 0) { setError("Добавьте хотя бы одного участника с документами"); return; }
-
-    const form = new FormData();
-    form.append("title", title);
-    specFiles.forEach((f) => form.append("spec", f));
-    // Имена участников выровнены по индексу с полями p_<i>.
-    form.append("names", JSON.stringify(filled.map((p) => p.name.trim())));
-    filled.forEach((p, i) => p.files.forEach((f) => form.append(`p_${i}`, f)));
-
-    setUploading(true);
+    const hasSpec = pkg.items.some((i) => i.role === "spec");
+    const hasBids = pkg.items.some((i) => i.role === "bid");
+    if (!hasSpec) { setError("Загрузите документацию закупки (ТЗ)"); return; }
+    if (!hasBids) { setError("Добавьте хотя бы одного участника с документами"); return; }
+    if (!pkg.ready || pkg.busy) { setError("Дождитесь загрузки всех файлов: упавшие повторите или уберите"); return; }
+    // Имена — по номеру участника в пакете (участников могли удалять в середине списка).
+    const names = Array.from({ length: 20 }, () => "");
+    participants.forEach((p) => { names[p.slot] = p.name.trim(); });
+    setStarting(true);
     try {
-      const { data } = await apiClient.post<Evaluation>("/bid-evaluation", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setTitle(""); setSpecFiles([]); setParticipants([{ name: "", files: [] }]);
-      openEvaluation(data.id);
+      const resultId = await pkg.start({ title, names });
+      pkg.reset();
+      setTitle("");
+      setParticipants([{ slot: 0, name: "" }]);
+      setSearchParams({ id: resultId });
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } } };
-      setError(err.response?.data?.error ?? "Не удалось запустить оценку");
+      // Остаёмся на шаге загрузки, файлы и участников не трогаем: можно повторить запуск.
+      // Текст axios («Network Error», «timeout of …») английский — подменяем русским;
+      // Error.message показываем только для собственных ошибок (например, хука).
+      if (axios.isAxiosError(e)) {
+        const serverText = (e.response?.data as { error?: string } | undefined)?.error;
+        setError(serverText ?? (e.response ? "Не удалось запустить анализ" : "Нет связи с сервером — проверьте подключение и повторите запуск."));
+      } else {
+        setError(e instanceof Error && e.message ? e.message : "Не удалось запустить анализ");
+      }
     } finally {
-      setUploading(false);
+      setStarting(false);
     }
   };
 
@@ -159,17 +191,12 @@ export default function BidEvaluationPage() {
             {/* Документация закупки (ТЗ) */}
             <div>
               <label className="text-sm font-medium">Документация закупки (ТЗ, можно несколько)</label>
-              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
-                <FileText className="h-4 w-4 text-primary shrink-0" />
-                <span className="truncate text-muted-foreground">{specFiles.length ? `Выбрано файлов: ${specFiles.length}` : "Выберите файлы (PDF, DOCX, XLSX, TXT)"}</span>
-                <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
-                  onChange={(e) => setSpecFiles(Array.from(e.target.files ?? []))} />
-              </label>
-              {specFiles.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {specFiles.map((f, i) => <Badge key={i} variant="secondary" className="text-[11px] font-normal">{f.name}</Badge>)}
-                </div>
-              )}
+              <div className="mt-1">
+                <PackageUploader
+                  items={pkg.items.filter((i) => i.role === "spec")}
+                  onAdd={(files) => pkg.add(files, "spec")} onRemove={pkg.remove} onRetry={pkg.retry}
+                  label="Выберите файлы документации (PDF, DOCX, XLSX, TXT)" disabled={starting} />
+              </div>
             </div>
 
             {/* Участники и их комплекты документов */}
@@ -180,27 +207,22 @@ export default function BidEvaluationPage() {
               </div>
               <div className="mt-2 space-y-3">
                 {participants.map((p, i) => (
-                  <div key={i} className="rounded-lg border border-border p-3">
+                  <div key={p.slot} className="rounded-lg border border-border p-3">
                     <div className="flex items-center gap-2">
-                      <Input value={p.name} onChange={(e) => setParticipantName(i, e.target.value)}
+                      <Input value={p.name} onChange={(e) => setParticipantName(p.slot, e.target.value)}
                         placeholder={`Участник ${i + 1} — название организации`} className="max-w-sm" />
                       {participants.length > 1 && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => removeParticipant(i)}>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => removeParticipant(p.slot)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
-                    <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm hover:border-primary/40">
-                      <Upload className="h-4 w-4 text-primary shrink-0" />
-                      <span className="truncate text-muted-foreground">{p.files.length ? `Документов: ${p.files.length}` : "Прикрепить документы участника (несколько)"}</span>
-                      <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
-                        onChange={(e) => setParticipantFiles(i, Array.from(e.target.files ?? []))} />
-                    </label>
-                    {p.files.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {p.files.map((f, j) => <Badge key={j} variant="outline" className="text-[11px] font-normal">{f.name}</Badge>)}
-                      </div>
-                    )}
+                    <div className="mt-2">
+                      <PackageUploader
+                        items={pkg.items.filter((i) => i.role === "bid" && i.participantIndex === p.slot)}
+                        onAdd={(files) => pkg.add(files, "bid", p.slot)} onRemove={pkg.remove} onRetry={pkg.retry}
+                        label="Прикрепить документы участника (несколько)" disabled={starting} />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -213,11 +235,11 @@ export default function BidEvaluationPage() {
             )}
 
             <div>
-              <Button onClick={submit} disabled={uploading}>
-                {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ClipboardCheck className="mr-1.5 h-4 w-4" />}
-                Проанализировать заявки
+              <Button onClick={submit} disabled={starting || !(pkg.ready && !pkg.busy)}>
+                {starting || pkg.busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ClipboardCheck className="mr-1.5 h-4 w-4" />}
+                {pkg.busy ? "Загружаем файлы…" : "Проанализировать заявки"}
               </Button>
-              <p className="mt-1.5 text-xs text-muted-foreground">Каждый участник оценивается по всему своему комплекту документов. Если имя не указано — берётся из имени файла. Поддержка: PDF, DOCX, XLSX, TXT.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">До 50 файлов (каждый до 50 МБ, всего до 1 ГБ), до 20 участников. Анализ идёт в фоне — страницу можно закрыть. Если имя участника не указано — берётся из имени файла. Сканы без текста и чертежи помечаются.</p>
             </div>
           </div>
         </Card>
@@ -228,7 +250,7 @@ export default function BidEvaluationPage() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">История оценок</p>
             <div className="divide-y divide-border">
               {history.map((h) => (
-                <button key={h.id} onClick={() => openEvaluation(h.id)}
+                <button key={h.id} onClick={() => setSearchParams({ id: h.id })}
                   className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm hover:bg-muted/40 rounded px-2">
                   <span className="truncate">{h.title}</span>
                   <span className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
@@ -244,16 +266,31 @@ export default function BidEvaluationPage() {
         )}
 
         {/* ── Результат ── */}
-        {current && (
+        {evaluationId && !current && !loadError && (
           <Card className="p-6">
-            {current.status === "processing" && (
-              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Анализируем заявки ({current.bidCount})…
-              </div>
-            )}
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Загружаем анализ…
+            </div>
+          </Card>
+        )}
+
+        {loadError && (
+          <Card className="p-6">
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{loadError}</span>
+            </div>
+          </Card>
+        )}
+
+        {current?.status === "processing" && (
+          <JobProgressCard title={`Анализируем заявки (${current.bidCount})`} progress={current.progress} />
+        )}
+
+        {current && current.status !== "processing" && (
+          <Card className="p-6">
             {current.status === "failed" && (
-              <div className="flex items-center gap-2 py-6 text-sm text-destructive">
-                <XCircle className="h-4 w-4" /> Не удалось выполнить оценку. Попробуйте ещё раз.
+              <div className="flex items-start gap-2 py-6 text-sm text-destructive">
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" /> {current.summary || "Не удалось выполнить оценку. Попробуйте ещё раз."}
               </div>
             )}
 
@@ -279,7 +316,7 @@ export default function BidEvaluationPage() {
                 </div>
 
                 {current.summary && (
-                  <div className="rounded-lg bg-primary-soft px-4 py-3 text-sm">
+                  <div className="whitespace-pre-line rounded-lg bg-primary-soft px-4 py-3 text-sm">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">Общий вывод по закупке</p>
                     {current.summary}
                   </div>
