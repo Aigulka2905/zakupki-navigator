@@ -347,3 +347,20 @@ export interface SystemInfo {
   nodeVersion: string;
   environment: string;
 }
+
+// ── Фоновая обработка пакетов (проверка документации, анализ заявок) ─────────
+
+export interface JobProgress {
+  stage?: string;
+  current?: number;
+  total?: number;
+  label?: string;
+}
+
+export interface PackageFileReport {
+  name: string;
+  kind: "text" | "drawing" | "scan" | "error";
+  chars: number;
+  checked: "ai" | "brand-scan" | "none" | "over-limit";
+  note?: string;
+}

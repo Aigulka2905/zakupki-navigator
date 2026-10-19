@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { hasDetailLink } from "@/lib/notification-link";
 import {
   Bell,
   BriefcaseBusiness,
@@ -21,10 +22,6 @@ import type { Notification, NotificationType } from "@/types/api";
 import { Reveal } from "@/components/Reveal";
 
 // ── Helpers ────────────────────────────────────────────────────
-
-function hasDetailLink(link: string | null | undefined): link is string {
-  return !!link && link.startsWith('/procurements/') && link.length > '/procurements/'.length;
-}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -107,7 +104,7 @@ function NotifCard({ n, onRead, onNavigate }: NotifCardProps) {
             handlePrimary();
           }
         }}
-        aria-label={hasDetailLink(n.link) ? `Открыть закупку: ${n.title}` : `Отметить прочитанным: ${n.title}`}
+        aria-label={hasDetailLink(n.link) ? `Открыть: ${n.title}` : `Отметить прочитанным: ${n.title}`}
         tabIndex={0}
       />
 
@@ -143,11 +140,11 @@ function NotifCard({ n, onRead, onNavigate }: NotifCardProps) {
 
         <p className="mt-1.5 text-[13px] text-muted-foreground">{n.message}</p>
 
-        {/* Hint row — visible only when card has a specific procurement link */}
+        {/* Hint row — visible only when card has a detail link */}
         {hasDetailLink(n.link) && (
           <p className="mt-2 flex items-center gap-1 text-[12px] text-muted-foreground/40 transition-colors group-hover:text-indigo-400/70">
             <ExternalLink className="h-3 w-3" aria-hidden />
-            Нажмите, чтобы открыть закупку
+            Нажмите, чтобы открыть
           </p>
         )}
       </div>
