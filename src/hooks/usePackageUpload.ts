@@ -37,6 +37,13 @@ export function usePackageUpload(kind: BatchKind) {
   const batchRef = useRef<Promise<string> | null>(null);
   const inFlight = useRef(new Set<string>());
   const aborts = useRef(new Map<string, AbortController>());
+  // Удаления на сервере: идущие, неудавшиеся (с пакетом, откуда удалять) и ключи
+  // убранных пользователем файлов — запуск не должен обгонять ни одно из них.
+  const removed = useRef(new Set<string>());
+  const sentFully = useRef(new Set<string>());
+  const running = useRef(new Map<string, Promise<void>>());
+  const deletes = useRef(new Map<string, Promise<void>>());
+  const failedDeletes = useRef(new Map<string, Promise<string>>());
 
   const patch = useCallback((key: string, p: Partial<UploadItem>) => {
     setItems((list) => list.map((it) => (it.key === key ? { ...it, ...p } : it)));
@@ -52,12 +59,23 @@ export function usePackageUpload(kind: BatchKind) {
     return batchRef.current;
   }, [kind]);
 
+  const deleteRemote = useCallback((batch: Promise<string>, fileId: string) => {
+    const p = batch
+      .then((id) => apiClient.delete(`/upload-batches/${id}/files/${fileId}`))
+      .then(() => { failedDeletes.current.delete(fileId); })
+      .catch(() => { failedDeletes.current.set(fileId, batch); })
+      .finally(() => { deletes.current.delete(fileId); });
+    deletes.current.set(fileId, p);
+    return p;
+  }, []);
+
   const upload = useCallback(async (item: UploadItem) => {
     const ctrl = new AbortController();
     aborts.current.set(item.key, ctrl);
     patch(item.key, { status: "uploading", progress: 0, error: undefined });
     try {
-      const id = await batchId();
+      const batch = batchId();
+      const id = await batch;
       const form = new FormData();
       form.append("role", item.role);
       if (item.participantIndex != null) form.append("participantIndex", String(item.participantIndex));
@@ -66,9 +84,15 @@ export function usePackageUpload(kind: BatchKind) {
         headers: { "Content-Type": "multipart/form-data" },
         signal: ctrl.signal,
         onUploadProgress: (e) => {
+          if (e.total && e.loaded >= e.total) sentFully.current.add(item.key);
           if (e.total) patch(item.key, { progress: Math.round((e.loaded / e.total) * 100) });
         },
       });
+      if (removed.current.has(item.key)) {
+        // Убран, пока шла загрузка: файл уже на сервере — удаляем и не возвращаем в список.
+        void deleteRemote(batch, data.fileId);
+        return;
+      }
       patch(item.key, { status: "done", progress: 100, fileId: data.fileId });
     } catch (e) {
       if (!ctrl.signal.aborted) {
@@ -76,8 +100,9 @@ export function usePackageUpload(kind: BatchKind) {
       }
     } finally {
       aborts.current.delete(item.key);
+      sentFully.current.delete(item.key);
     }
-  }, [batchId, patch]);
+  }, [batchId, patch, deleteRemote]);
 
   // Очередь: запускаем ожидающие файлы, пока занято меньше PARALLEL слотов.
   useEffect(() => {
@@ -88,10 +113,12 @@ export function usePackageUpload(kind: BatchKind) {
       .slice(0, free)
       .forEach((i) => {
         inFlight.current.add(i.key);
-        void upload(i).finally(() => {
+        const run = upload(i).finally(() => {
+          running.current.delete(i.key);
           inFlight.current.delete(i.key);
           setItems((list) => [...list]); // освободился слот — разбудить очередь
         });
+        running.current.set(i.key, run);
       });
   }, [items, upload]);
 
@@ -114,13 +141,13 @@ export function usePackageUpload(kind: BatchKind) {
 
   const remove = useCallback((key: string) => {
     const item = itemsRef.current.find((i) => i.key === key);
-    aborts.current.get(key)?.abort();
-    if (item?.fileId && batchRef.current) {
-      const fileId = item.fileId;
-      void batchRef.current.then((id) => apiClient.delete(`/upload-batches/${id}/files/${fileId}`)).catch(() => {});
-    }
+    removed.current.add(key);
+    // Тело запроса уже отправлено целиком — обрыв сервер не остановит (файл сохранится);
+    // дожидаемся ответа и удаляем полученный fileId.
+    if (!sentFully.current.has(key)) aborts.current.get(key)?.abort();
+    if (item?.fileId && batchRef.current) void deleteRemote(batchRef.current, item.fileId);
     setItems((list) => list.filter((i) => i.key !== key));
-  }, []);
+  }, [deleteRemote]);
 
   const retry = useCallback((key: string) => patch(key, { status: "queued", progress: 0, error: undefined }), [patch]);
 
@@ -129,15 +156,23 @@ export function usePackageUpload(kind: BatchKind) {
   }, [remove]);
 
   const start = useCallback(async (body: Record<string, unknown>) => {
+    // Сервер запускает всё, что лежит в пакете: сначала дожидаемся удалений.
+    await Promise.all([...running.current].filter(([k]) => removed.current.has(k)).map(([, p]) => p));
+    await Promise.all(deletes.current.values());
+    await Promise.all([...failedDeletes.current].map(([fileId, batch]) => deleteRemote(batch, fileId)));
+    if (failedDeletes.current.size > 0) {
+      throw new Error("Не удалось убрать из пакета удалённые файлы — повторите запуск.");
+    }
     const id = await batchId();
     const { data } = await apiClient.post<{ resultId: string }>(`/upload-batches/${id}/start`, body);
     return data.resultId;
-  }, [batchId]);
+  }, [batchId, deleteRemote]);
 
   // После запуска — новый пакет для следующей проверки.
   const reset = useCallback(() => {
     aborts.current.forEach((c) => c.abort());
     batchRef.current = null;
+    failedDeletes.current.clear(); // старый пакет брошен — его удаления больше не важны
     setItems([]);
   }, []);
 

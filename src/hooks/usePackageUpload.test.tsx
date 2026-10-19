@@ -85,4 +85,66 @@ describe("usePackageUpload", () => {
     expect(id).toBe("r1");
     expect(post).toHaveBeenLastCalledWith("/upload-batches/b1/start", { title: "t" });
   });
+
+  const uploaded = async (result: { current: ReturnType<typeof usePackageUpload> }, name = "a.pdf") => {
+    act(() => result.current.add([file(name)], "doc"));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    await act(async () => { pending[pending.length - 1].resolve({ data: { fileId: "f1" } }); });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+  };
+
+  it("сбой удаления: запуск не идёт и бросает ошибку; после успешного повтора — идёт", async () => {
+    const { result } = renderHook(() => usePackageUpload("doc_review"));
+    await uploaded(result);
+    del.mockRejectedValueOnce(new Error("net")).mockRejectedValueOnce(new Error("net"));
+    act(() => result.current.remove(result.current.items[0].key));
+    await waitFor(() => expect(del).toHaveBeenCalledTimes(1));
+    let err: unknown;
+    await act(async () => { await result.current.start({ title: "t" }).catch((e) => { err = e; }); });
+    expect((err as Error).message).toBe("Не удалось убрать из пакета удалённые файлы — повторите запуск.");
+    expect(post.mock.calls.some(([u]) => String(u).endsWith("/start"))).toBe(false);
+    let id = "";
+    await act(async () => { id = await result.current.start({ title: "t" }); });
+    expect(id).toBe("r1");
+    expect(del).toHaveBeenCalledTimes(3);
+  });
+
+  it("удалить и сразу запустить: /start только после ответа на DELETE", async () => {
+    const { result } = renderHook(() => usePackageUpload("doc_review"));
+    await uploaded(result);
+    let release!: () => void;
+    del.mockReturnValueOnce(new Promise((r) => { release = () => r({}); }));
+    let started: Promise<string> | undefined;
+    act(() => {
+      result.current.remove(result.current.items[0].key);
+      started = result.current.start({ title: "t" });
+    });
+    await waitFor(() => expect(del).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(post.mock.calls.some(([u]) => String(u).endsWith("/start"))).toBe(false);
+    await act(async () => { release(); await started; });
+    expect(post).toHaveBeenLastCalledWith("/upload-batches/b1/start", { title: "t" });
+  });
+
+  it("убран файл, тело которого уже ушло целиком: по ответу его fileId удаляется, запуск ждёт", async () => {
+    const { result } = renderHook(() => usePackageUpload("doc_review"));
+    act(() => result.current.add([file("a.pdf")], "doc"));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    const cfg = post.mock.calls.find(([u]) => u === "/upload-batches/b1/files")![2] as {
+      onUploadProgress: (e: { loaded: number; total: number }) => void; signal: AbortSignal;
+    };
+    act(() => cfg.onUploadProgress({ loaded: 10, total: 10 }));
+    let started: Promise<string> | undefined;
+    act(() => {
+      result.current.remove(result.current.items[0].key);
+      started = result.current.start({ title: "t" });
+    });
+    expect(cfg.signal.aborted).toBe(false);
+    expect(result.current.items).toHaveLength(0);
+    await act(async () => { pending[0].resolve({ data: { fileId: "f9" } }); });
+    await waitFor(() => expect(del).toHaveBeenCalledWith("/upload-batches/b1/files/f9"));
+    await act(async () => { await started; });
+    expect(result.current.items).toHaveLength(0);
+    expect(Math.max(...del.mock.invocationCallOrder)).toBeLessThan(post.mock.invocationCallOrder[post.mock.calls.length - 1]);
+  });
 });
