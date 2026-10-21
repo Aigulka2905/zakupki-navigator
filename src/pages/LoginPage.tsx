@@ -395,9 +395,24 @@ type LoginStep =
   | { kind: "setup"; setupToken: string; otpauthUri: string }
   | { kind: "backup"; codes: string[] };
 
+// Вход через ЭТП «Торги РФ»: backend при отказе возвращает сюда ?sso_error=<code>.
+const SSO_ERRORS: Record<string, string> = {
+  invalid_request: "Некорректная ссылка входа с площадки «Торги РФ». Войдите заново из личного кабинета площадки.",
+  expired: "Сессия входа устарела. Перейдите в ZakupkiAI из личного кабинета площадки ещё раз.",
+  access_denied: "Вход через площадку «Торги РФ» отменён.",
+  forbidden: "Площадка «Торги РФ» не разрешила вход для этого профиля.",
+  blocked: "Учётная запись заблокирована. Обратитесь в поддержку.",
+  unavailable: "Площадка «Торги РФ» временно недоступна. Повторите попытку позже.",
+  failed: "Не удалось войти через площадку «Торги РФ». Повторите попытку или войдите по паролю.",
+};
+
 function LoginForm() {
   const navigate = useNavigate();
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const ssoError = searchParams.get("sso_error");
+  const [serverError, setServerError] = useState<string | null>(
+    ssoError ? SSO_ERRORS[ssoError] ?? SSO_ERRORS.failed : null,
+  );
   const [step, setStep] = useState<LoginStep>({ kind: "credentials" });
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),

@@ -36,6 +36,7 @@ const LoginPage = lazy(() => import("./pages/LoginPage.tsx"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage.tsx"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage.tsx"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.tsx"));
+const SsoCompletePage = lazy(() => import("./pages/SsoCompletePage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const AdminPage = lazy(() => import("./pages/AdminPage.tsx"));
 const NationalRegimePage = lazy(() => import("./pages/NationalRegimePage.tsx"));
@@ -97,6 +98,7 @@ const App = () => (
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/sso/complete" element={<SsoCompletePage />} />
 
           {/* Защищённые маршруты */}
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
