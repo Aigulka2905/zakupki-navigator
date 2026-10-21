@@ -5,15 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { hasDetailLink } from "@/lib/notification-link";
 import { useNotifications, useUnreadCount, useMarkRead, useMarkAllRead } from "@/hooks/useNotifications";
 import type { Notification } from "@/types/api";
 
 // ── Helpers ────────────────────────────────────────────────────
-
-// Returns true only when the link points to a specific procurement (has a UUID/id segment)
-function hasDetailLink(link: string | null | undefined): link is string {
-  return !!link && link.startsWith('/procurements/') && link.length > '/procurements/'.length;
-}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

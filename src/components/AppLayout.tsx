@@ -18,8 +18,6 @@ export function AppLayout({ children, title, subtitle, headerRight }: AppLayoutP
   const [collapsed, setCollapsed] = useState(false);
   const { data: currentUser } = useCurrentUser();
 
-  const isCustomer = currentUser?.organization?.orgType === "customer";
-
   const initials = currentUser?.fullName
     ? currentUser.fullName.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase()
     : "ЗК";
@@ -68,7 +66,7 @@ export function AppLayout({ children, title, subtitle, headerRight }: AppLayoutP
 
             <ThemeToggle />
 
-            {!isCustomer && <NotificationBell />}
+            <NotificationBell />
 
             {/* User avatar */}
             <div className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-[11px] font-bold text-white shadow-md shadow-indigo-500/30 ring-2 ring-background">

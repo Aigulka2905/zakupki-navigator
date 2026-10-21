@@ -1,18 +1,25 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Upload, Loader2, ShieldAlert, AlertTriangle, CheckCircle2, Printer, Gavel, Quote, Wrench, Scale,
+  Loader2, ShieldAlert, AlertTriangle, CheckCircle2, Printer, Gavel, Quote, Wrench, Scale,
 } from "lucide-react";
+import axios from "axios";
 import apiClient from "@/lib/api-client";
 import { openExternal } from "@/lib/url";
 import { CoverageNotes, coverageNotesHtml, type Coverage } from "@/components/CoverageNotes";
+import { PackageUploader } from "@/components/PackageUploader";
+import { JobProgressCard } from "@/components/JobProgressCard";
+import { PackageReport } from "@/components/PackageReport";
+import { usePackageUpload } from "@/hooks/usePackageUpload";
+import type { JobProgress, PackageFileReport } from "@/types/api";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
-interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; }
-interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; coverage?: Coverage | null; }
+interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; file?: string; }
+interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; coverage?: Coverage | null; files?: PackageFileReport[]; error?: string; }
+interface AnalysisRecord { id: string; status: "processing" | "completed" | "failed"; progress?: JobProgress | null; analysisResult?: ReviewResult | null; }
 
 const MODE_LAWS: Record<string, string> = {
   "223": "223-ФЗ · ГК РФ · ФЗ-135",
@@ -45,7 +52,7 @@ const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g,
 function buildHtml(r: ReviewResult): string {
   const rows = r.risks.map((x, i) => {
     const cites = (x.citations ?? []).map((c) => `${esc(citeLabel(c))}${c.url ? ` (${esc(c.url)})` : ""}`).join("; ");
-    return `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b><div class="s">${esc(x.severity)}</div></td>
+    return `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b><div class="s">${esc(x.severity)}${x.file ? ` · ${esc(x.file)}` : ""}</div></td>
      <td>${x.place ? `<div class="q">«${esc(x.place)}»</div>` : ""}<div>${esc(x.why)}</div>${x.fix ? `<div class="f"><b>Исправить:</b> ${esc(x.fix)}</div>` : ""}${cites ? `<div class="c"><b>Основание:</b> ${cites}</div>` : ""}</td></tr>`;
   }).join("");
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
@@ -72,45 +79,71 @@ const MODES: { value: Mode; label: string; hint: string }[] = [
 ];
 
 export default function DocReviewPage() {
-  const [files, setFiles] = useState<File[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const analysisId = searchParams.get("id");
   const [mode, setMode] = useState<Mode>("223");
-  const [loading, setLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ReviewResult | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [record, setRecord] = useState<AnalysisRecord | null>(null);
+  const pkg = usePackageUpload("doc_review");
 
-  // Открытие сохранённой проверки из «Истории»: /doc-review?id=<analysisId>.
+  // Открытая проверка (/doc-review?id=…) — из «Истории», уведомления или сразу
+  // после запуска. Пока идёт обработка — опрашиваем статус каждые 3 с.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("id");
-    if (!id) return;
-    setLoading(true);
-    apiClient.get<{ analysisResult?: ReviewResult }>(`/analysis/${id}`)
-      .then(({ data }) => {
-        if (data?.analysisResult) {
-          setResult(data.analysisResult);
-          if (data.analysisResult.mode) setMode(data.analysisResult.mode as Mode);
-        }
-      })
-      .catch(() => setError("Не удалось загрузить сохранённую проверку"))
-      .finally(() => setLoading(false));
-  }, []);
+    setRecord(null);
+    setLoadError(null);
+    if (!analysisId) return;
+    let cancelled = false;
+    let loaded = false;
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const { data } = await apiClient.get<AnalysisRecord>(`/analysis/${analysisId}`);
+        if (cancelled) return;
+        loaded = true;
+        setLoadError(null);
+        setRecord(data);
+        if (data.analysisResult?.mode) setMode(data.analysisResult.mode as Mode);
+        if (data.status === "processing") timer = window.setTimeout(load, 3000);
+      } catch {
+        if (cancelled) return;
+        // Уже показываем запись — сбой опроса считаем временным и пробуем снова;
+        // ошибку показываем, только если записи нет вовсе.
+        if (loaded) timer = window.setTimeout(load, 3000);
+        else setLoadError("Не удалось загрузить проверку");
+      }
+    };
+    void load();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [analysisId]);
 
   const submit = async () => {
     setError(null);
-    if (files.length === 0) { setError("Загрузите файлы документации закупки"); return; }
-    const form = new FormData();
-    files.forEach((f) => form.append("docs", f));
-    form.append("mode", mode);
-    setLoading(true); setResult(null);
+    if (!pkg.items.length) { setError("Загрузите файлы документации закупки"); return; }
+    if (!pkg.ready || pkg.busy) { setError("Дождитесь загрузки всех файлов: упавшие повторите или уберите"); return; }
+    setStarting(true);
     try {
-      const { data } = await apiClient.post<ReviewResult>("/doc-review", form, {
-        headers: { "Content-Type": "multipart/form-data" }, timeout: 300000,
-      });
-      setResult(data);
+      const resultId = await pkg.start({ mode });
+      pkg.reset();
+      setSearchParams({ id: resultId });
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } } };
-      setError(err.response?.data?.error ?? "Не удалось выполнить проверку");
-    } finally { setLoading(false); }
+      // Ошибка запуска (в т.ч. «не удалось убрать удалённые файлы») — остаёмся на
+      // шаге загрузки, список файлов не трогаем: можно повторить запуск.
+      // Текст axios («Network Error», «timeout of …») английский — подменяем русским;
+      // Error.message показываем только для собственных ошибок (например, хука).
+      if (axios.isAxiosError(e)) {
+        const serverText = (e.response?.data as { error?: string } | undefined)?.error;
+        setError(serverText ?? (e.response ? "Не удалось запустить проверку" : "Нет связи с сервером — проверьте подключение и повторите запуск."));
+      } else {
+        setError(e instanceof Error && e.message ? e.message : "Не удалось запустить проверку");
+      }
+    } finally {
+      setStarting(false);
+    }
   };
+
+  const result = record?.status === "completed" ? record.analysisResult ?? null : null;
 
   const downloadPdf = async () => {
     if (!result) return;
@@ -152,39 +185,55 @@ export default function DocReviewPage() {
           </div>
 
           <label className="mt-5 block text-sm font-medium">Документация закупки (проект)</label>
-          <p className="mt-0.5 text-xs text-muted-foreground">Извещение, ТЗ, проект договора. Можно несколько файлов.</p>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-sm hover:border-primary/40">
-            <Upload className="h-4 w-4 text-primary shrink-0" />
-            <span className="truncate text-muted-foreground">{files.length ? `Файлов: ${files.length}` : "Выберите файлы (PDF, DOCX, XLSX, TXT)"}</span>
-            <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden"
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
-          </label>
-          {files.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">{files.map((f, i) => <Badge key={i} variant="secondary" className="text-[11px] font-normal">{f.name}</Badge>)}</div>
-          )}
+          <p className="mt-0.5 text-xs text-muted-foreground">Извещение, ТЗ, проект договора, проектная документация. До 50 файлов: каждый до 50 МБ, всего до 1 ГБ.</p>
+          <div className="mt-2">
+            <PackageUploader items={pkg.items} onAdd={(files) => pkg.add(files, "doc")} onRemove={pkg.remove} onRetry={pkg.retry} disabled={starting} />
+          </div>
           {error && (
             <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
             </div>
           )}
           <div className="mt-3">
-            <Button onClick={submit} disabled={loading}>
-              {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Gavel className="mr-1.5 h-4 w-4" />}
-              Проверить документацию
+            <Button onClick={submit} disabled={starting || !(pkg.ready && !pkg.busy)}>
+              {starting || pkg.busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Gavel className="mr-1.5 h-4 w-4" />}
+              {pkg.busy ? "Загружаем файлы…" : "Проверить документацию"}
             </Button>
-            <p className="mt-1.5 text-xs text-muted-foreground">Обычно до ~20 секунд; большие документы проверяются по частям — до нескольких минут. Поддержка: PDF, DOCX, XLSX, TXT.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Проверка идёт в фоне — обычно от 2 до 15 минут, страницу можно закрыть. Текст проверяет ИИ (до ~400 страниц
+              на пакет, ключевые документы — первыми), чертежи — поиск марок без «или эквивалент», сканы без текста помечаются.
+            </p>
           </div>
         </Card>
 
-        {loading && (
+        {analysisId && !record && !loadError && (
           <Card className="p-6">
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Анализируем документацию на риски…
+              <Loader2 className="h-4 w-4 animate-spin" /> Загружаем проверку…
             </div>
           </Card>
         )}
 
-        {result && !loading && ov && (
+        {loadError && (
+          <Card className="p-6">
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{loadError}</span>
+            </div>
+          </Card>
+        )}
+
+        {record?.status === "processing" && <JobProgressCard title="Проверяем документацию" progress={record.progress} />}
+
+        {record?.status === "failed" && (
+          <Card className="p-6">
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{record.analysisResult?.error ?? "Проверка не выполнена. Загрузите пакет ещё раз."}</span>
+            </div>
+          </Card>
+        )}
+
+        {result && ov && (
           <Card className="p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
@@ -205,6 +254,8 @@ export default function DocReviewPage() {
 
             <CoverageNotes coverage={result.coverage} />
 
+            <PackageReport files={result.files} />
+
             {result.risks.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 className="h-4 w-4" /> Явных рисков не выявлено. Всё равно проверьте документацию по внутреннему регламенту.
@@ -221,6 +272,7 @@ export default function DocReviewPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-sm">{r.title}</p>
                             <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${s.cls}`}>{s.label}</span>
+                            {r.file && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title="Файл пакета">{r.file}</span>}
                           </div>
                           {r.place && (
                             <p className="mt-1 flex gap-1.5 text-xs text-muted-foreground italic"><Quote className="h-3 w-3 shrink-0 mt-0.5" />«{r.place}»</p>
