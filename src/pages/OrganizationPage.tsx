@@ -22,6 +22,7 @@ import { TeamSection } from "@/components/TeamSection";
 import apiClient from "@/lib/api-client";
 import type { Organization, OrgDocument, Procurement } from "@/types/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { priceLabel } from "@/lib/money";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,9 +74,6 @@ function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
-
-const fmtPrice = (p: string | number) =>
-  new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(p));
 
 const OKVED_STOP = new Set(["деятел", "связан", "прочая", "прочие", "иных", "иного", "облас", "услуг", "работ"]);
 
@@ -342,7 +340,7 @@ function OkvedProcurements({ okvedCodes }: { okvedCodes: OkvedCode[] }) {
                 {p.title}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground/60">
-                <span className="font-semibold text-foreground/80">{fmtPrice(p.initialPrice)}</span>
+                <span className="font-semibold text-foreground/80">{priceLabel(p.initialPrice, { compact: false }) ?? "—"}</span>
                 {p.customer && <span>{p.customer.name}</span>}
                 <span className={cn("flex items-center gap-1", deadlineCls)}>
                   <CalendarClock className="h-3 w-3" />

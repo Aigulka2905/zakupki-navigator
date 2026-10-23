@@ -25,12 +25,14 @@ import {
 } from "lucide-react";
 import { Reveal } from "@/components/Reveal";
 import apiClient from "@/lib/api-client";
+import { sessionTitle } from "@/lib/chat-session";
 
 // ── Types ─────────────────────────────────────────────────────
 
 interface ChatSession {
   sessionId: string | null;
   procurementId: string | null;
+  title?: string | null;
   lastMessage: string;
   lastAt: string;
   count: number;
@@ -96,8 +98,8 @@ function buildActivities(sessions: ChatSession[], analyses: AnalysisItem[]): Act
   for (const s of sessions) {
     const title = s.procurementTitle
       ? truncate(s.procurementTitle, 70)
-      : s.lastMessage
-      ? truncate(s.lastMessage, 70)
+      : sessionTitle(s)
+      ? truncate(sessionTitle(s), 70)
       : "Общий чат";
 
     const href = s.procurementId

@@ -26,8 +26,8 @@ interface EisItem {
 
 const CV_THRESHOLD = 33;
 const MIN_SOURCES = 3;
-const DEFAULT_VAT = 20;
-const VAT_OPTIONS = [20, 10, 0];
+const DEFAULT_VAT = 22; // основная ставка НДС с 01.01.2026 (ФЗ-425 от 28.11.2025)
+const VAT_OPTIONS = [22, 20, 10, 0]; // 20% — для цен из КП и контрактов до 2026 года
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—");
 const floor2 = (x: number) => Math.floor(x * 100 + 1e-6) / 100;
 const toComparable = (raw: number, vr: number | null, target: number) =>
@@ -131,6 +131,8 @@ export default function NmckPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [saving, setSaving] = useState(false);
   const [justifying, setJustifying] = useState(false);
+  // Закон закупки — правовая основа в тексте обоснования (как в «Проверке документации»).
+  const [law, setLaw] = useState<"223" | "44">("223");
   const pollRef = useRef<number | null>(null);
 
   // ЕИС-поиск цен
@@ -205,7 +207,7 @@ export default function NmckPage() {
     setJustifying(true); setError(null);
     try {
       await apiClient.put(`/nmck/${calc.id}`, { title: calc.title, positions }); // сначала сохраняем правки
-      const { data } = await apiClient.post<Calc>(`/nmck/${calc.id}/justify`, {});
+      const { data } = await apiClient.post<Calc>(`/nmck/${calc.id}/justify`, { law });
       setCalc(data); setPositions(Array.isArray(data.positions) ? data.positions : positions);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } };
@@ -501,12 +503,21 @@ export default function NmckPage() {
 
                 <div className="flex flex-wrap gap-2 no-print">
                   <Button size="sm" variant="outline" onClick={save} disabled={saving}>{saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Calculator className="mr-1.5 h-3.5 w-3.5" />}Пересчитать и сохранить</Button>
+                  <select
+                    aria-label="Закон закупки"
+                    value={law}
+                    onChange={(e) => setLaw(e.target.value as "223" | "44")}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="223">По 223-ФЗ</option>
+                    <option value="44">По 44-ФЗ</option>
+                  </select>
                   <Button size="sm" onClick={justify} disabled={justifying}>{justifying ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}Сформировать обоснование (ИИ)</Button>
                 </div>
 
                 {calc.justification && (
                   <div className="rounded-lg border border-border p-4">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Обоснование НМЦК</p>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Обоснование НМЦ</p>
                     <p className="whitespace-pre-line text-sm leading-relaxed">{calc.justification}</p>
                   </div>
                 )}

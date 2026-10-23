@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { AiFeaturesTable, type FeatureStat } from "@/components/admin/AiFeaturesTable";
 import { apiClient } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +28,7 @@ import type { AiPresetModel } from "@/hooks/useAdmin";
 interface ModelStat {
   model: string;
   provider: string;
-  source: string;
+  source?: string;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -78,8 +79,8 @@ interface ChainEntry {
 }
 
 interface AiUsageStats {
-  monthly: { models: ModelStat[]; totals: Totals };
-  allTime: { models: ModelStat[]; totals: Totals };
+  monthly: { models: ModelStat[]; features?: FeatureStat[]; totals: Totals };
+  allTime: { models: ModelStat[]; features?: FeatureStat[]; totals: Totals };
   daily: DayPoint[];
   chain: ChainEntry[];
   modelLimits: ModelLimit[];
@@ -339,7 +340,7 @@ function ModelsTable({ models, title }: { models: ModelStat[]; title: string }) 
           </TableHeader>
           <TableBody>
             {models.map((m) => (
-              <TableRow key={`${m.model}-${m.source}`}>
+              <TableRow key={m.model}>
                 <TableCell className="font-mono text-xs">{m.model}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className={`text-xs ${providerColor(m.provider)}`}>
@@ -552,6 +553,7 @@ export function AdminAiUsageTab() {
       </div>
 
       {/* Monthly breakdown */}
+      <AiFeaturesTable features={monthly.features ?? []} title="Разбивка за месяц по функциям" />
       <ModelsTable models={monthly.models} title="Разбивка за месяц по моделям" />
     </div>
   );

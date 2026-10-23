@@ -33,6 +33,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { priceLabel } from "@/lib/money";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Procurement, PaginatedResponse, FavoriteOrg } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -86,13 +87,6 @@ async function addFavorite(id: string) { await apiClient.post(`/customers/favori
 async function removeFavorite(id: string) { await apiClient.delete(`/customers/favorites/${id}`); }
 
 // ── Helpers ───────────────────────────────────────────────────
-
-function fmtPrice(price: string | number) {
-  const n = Number(price);
-  if (n >= 1_000_000)
-    return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 1, notation: "compact" }).format(n);
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);
-}
 
 function daysLeft(deadline: string) {
   return Math.floor((new Date(deadline).getTime() - Date.now()) / 86_400_000);
@@ -550,7 +544,7 @@ const ProcurementsPage = () => {
                           )}
                           <span className="text-muted-foreground/25">·</span>
                           <span className="font-semibold text-foreground/65 tabular-nums">
-                            {fmtPrice(p.initialPrice)}
+                            {priceLabel(p.initialPrice) ?? "—"}
                           </span>
                         </div>
 

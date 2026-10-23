@@ -22,32 +22,37 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import apiClient from "@/lib/api-client";
+import { priceLabel } from "@/lib/money";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Procurement, PaginatedResponse } from "@/types/api";
 import { Reveal } from "@/components/Reveal";
 import { cn } from "@/lib/utils";
+import { monthGridRange, collectPages } from "@/lib/calendar";
 
 // ── API ───────────────────────────────────────────────────────
 
-async function fetchProcurements(onlyMine: boolean): Promise<Procurement[]> {
+async function fetchProcurements(onlyMine: boolean, month: Date): Promise<Procurement[]> {
   // Участники видят только активные (нет смысла подавать заявки на завершённые)
-  // Заказчики видят все свои закупки на всех этапах
-  const params = new URLSearchParams({ limit: "200", sortBy: "applicationDeadline", sortDir: "asc" });
+  // Заказчики видят все свои закупки на всех этапах.
+  // Только закупки видимой сетки месяца: раньше брались 200 самых ранних «активных» —
+  // с прошедшими сроками, и текущий месяц оставался пустым.
+  const { from, to } = monthGridRange(month);
+  const params = new URLSearchParams({
+    limit: "200", sortBy: "applicationDeadline", sortDir: "asc",
+    deadlineFrom: from.toISOString(), deadlineTo: to.toISOString(),
+  });
   if (!onlyMine) params.set("status", "active");
   if (onlyMine)  params.set("onlyMine", "true");
-  const { data } = await apiClient.get<PaginatedResponse<Procurement>>(`/procurements?${params}`);
-  return data.data;
+  // В окне месяца бывает больше 200 закупок (лимит страницы) — догружаем остальные.
+  return collectPages(async (page) => {
+    params.set("page", String(page));
+    const { data } = await apiClient.get<PaginatedResponse<Procurement>>(`/procurements?${params}`);
+    return { data: data.data, total: data.total };
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────
 
-function formatPrice(p: string | number) {
-  return new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "RUB",
-    maximumFractionDigits: 0,
-  }).format(Number(p));
-}
 
 // Понедельник первый (ISO week)
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -66,8 +71,8 @@ const CalendarPage = () => {
   const isCustomer = currentUser?.organization?.orgType === "customer";
 
   const { data: procurements = [], isError: procError } = useQuery({
-    queryKey: ["calendar-procurements", isCustomer],
-    queryFn: () => fetchProcurements(isCustomer),
+    queryKey: ["calendar-procurements", isCustomer, currentMonth.toISOString()],
+    queryFn: () => fetchProcurements(isCustomer, currentMonth),
     staleTime: 60_000,
     enabled: currentUser !== undefined,
   });
@@ -317,7 +322,7 @@ const CalendarPage = () => {
                             </div>
                           )}
                           <div className="font-medium text-foreground">
-                            {formatPrice(p.initialPrice)}
+                            {priceLabel(p.initialPrice, { compact: false }) ?? "—"}
                           </div>
                         </div>
 
@@ -369,7 +374,7 @@ const CalendarPage = () => {
                             </div>
                           )}
                           <div className="font-medium text-foreground">
-                            {formatPrice(p.initialPrice)}
+                            {priceLabel(p.initialPrice, { compact: false }) ?? "—"}
                           </div>
                         </div>
 

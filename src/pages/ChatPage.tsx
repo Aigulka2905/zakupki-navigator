@@ -14,6 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import type { ChatMessage, ChatResponse, Procurement, Document, ChatDocument } from "@/types/api";
+import { sessionTitle } from "@/lib/chat-session";
+import { priceLabel } from "@/lib/money";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ interface ChatSession {
   procurementId: string | null;
   procurementTitle: string | null;
   procurementNumber: string | null;
+  title?: string | null;
   lastMessage: string;
   lastAt: string;
   count: number;
@@ -63,9 +66,6 @@ async function sendMessage(payload: {
   const { data } = await apiClient.post<ChatResponse>("/assistant/chat", payload);
   return data;
 }
-
-const fmtPrice = (p: string | number) =>
-  new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(p));
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
@@ -258,7 +258,7 @@ function ContextCard({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-muted-foreground/60">Цена</span>
-            <span className="text-[12px] font-semibold text-foreground">{fmtPrice(procurement.initialPrice)}</span>
+            <span className="text-[12px] font-semibold text-foreground">{priceLabel(procurement.initialPrice, { compact: false }) ?? "Цена не указана"}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-muted-foreground/60">Дедлайн</span>
@@ -434,7 +434,7 @@ function SessionsPanel({
               </div>
               <div className="min-w-0 flex-1">
                 <div className={cn("text-[12px] font-medium truncate", isActive ? "text-indigo-400" : "text-foreground")}>
-                  {s.lastMessage.slice(0, 28)}{s.lastMessage.length > 28 ? "…" : ""}
+                  {sessionTitle(s).slice(0, 28)}{sessionTitle(s).length > 28 ? "…" : ""}
                 </div>
                 <div className="text-[10px] text-muted-foreground/50">{s.count} сообщ. · 223-ФЗ / 44-ФЗ</div>
               </div>
@@ -855,7 +855,7 @@ const ChatPage = () => {
         {
           icon: TrendingUp, label: "Шансы на победу",
           desc: "Оценка участия",
-          text: `Оцени шансы на победу в закупке №${procurement.number} с начальной ценой ${fmtPrice(procurement.initialPrice)}`,
+          text: `Оцени шансы на победу в закупке №${procurement.number} ${priceLabel(procurement.initialPrice, { compact: false }) ? `с начальной ценой ${priceLabel(procurement.initialPrice, { compact: false })}` : "(начальная цена не указана)"}`,
         },
       ]
     : [

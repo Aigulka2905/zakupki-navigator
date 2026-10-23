@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { openExternal } from "@/lib/url";
+import { tokensIncluded, balanceLow as isBalanceLow, priceRows, type ModelPrice } from "@/lib/billing";
 import { InvoiceSection } from "@/components/InvoiceSection";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -54,6 +55,8 @@ interface PlanInfo {
 interface UsageData {
   currentModel: string;
   isFree: boolean;
+  tokensBilled?: boolean;
+  modelPrices?: ModelPrice[];
   pricePerKToken: string;
   monthlyTokens: number;
   allTimeTokens: number;
@@ -611,7 +614,8 @@ const BillingPage = () => {
   };
 
   const currentPlanKey = usage?.plan?.key ?? "free";
-  const balanceLow = (usage?.balanceKopecks ?? 0) < 5000 && !usage?.isFree;
+  const included = tokensIncluded(usage);
+  const balanceLow = isBalanceLow(usage);
 
   return (
     <AppLayout title="Биллинг и оплата" subtitle="Тарифные планы, баланс и история платежей">
@@ -655,7 +659,7 @@ const BillingPage = () => {
                   <p className="mt-1 text-2xl font-bold">{formatTokens(usage?.monthlyTokens ?? 0)}</p>
                 )}
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {usage?.isFree ? "Входит в тариф" : `≈ ${usage?.monthlyCostRubles} ₽`}
+                  {included ? "Входит в тариф" : `≈ ${usage?.monthlyCostRubles} ₽`}
                 </p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10">
@@ -673,7 +677,7 @@ const BillingPage = () => {
                   {MODEL_LABELS[usage?.currentModel ?? ""] ?? DEFAULT_MODEL_LABEL}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {usage?.isFree ? "Входит в тариф" : `${usage?.pricePerKToken} ₽ / 1К токенов`}
+                  {included ? "Входит в тариф" : `${usage?.pricePerKToken} ₽ / 1К токенов`}
                 </p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
@@ -775,37 +779,33 @@ const BillingPage = () => {
             <div className="rounded-lg bg-muted/40 p-3">
               <p className="text-xs text-muted-foreground">Стоимость месяца</p>
               <p className="mt-0.5 text-lg font-semibold">
-                {usage?.isFree ? "Входит в тариф" : `${usage?.monthlyCostRubles} ₽`}
+                {included ? "Входит в тариф" : `${usage?.monthlyCostRubles} ₽`}
               </p>
             </div>
           </div>
 
-          {/* Pricing table */}
+          {/* Цены за токены — только когда токены списываются с баланса; в квотном режиме
+              они входят в тариф, и прайс модели только сбивал бы с толку. */}
+          {!included && (
           <div className="border-t border-border pt-4">
             <p className="mb-3 text-xs font-medium text-muted-foreground">Стоимость за 1 000 токенов</p>
             <div className="space-y-2">
-              {[
-                { model: "YandexGPT Lite",        input: "0.25 ₽", output: "0.30 ₽", blended: "~0.26 ₽", active: usage?.currentModel === "yandexgpt-lite/latest" },
-                { model: "YandexGPT Pro",          input: "1.50 ₽", output: "1.80 ₽", blended: "~1.55 ₽", active: usage?.currentModel === "yandexgpt/latest" },
-              ].map((row) => (
+              {priceRows(usage?.modelPrices, usage?.currentModel).map((row) => (
                 <div key={row.model} className={cn("rounded-md px-3 py-2 text-sm", row.active ? "bg-indigo-500/8 ring-1 ring-inset ring-indigo-500/20" : "bg-muted/30")}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{row.model}</span>
+                      <span className="font-medium">{row.label}</span>
                       {row.active && <Badge variant="outline" className="h-4 px-1.5 text-[10px]">Активна</Badge>}
                     </div>
-                    <span className={cn("font-semibold", row.active ? "text-indigo-400" : "text-muted-foreground")}>{row.blended}</span>
+                    <span className={cn("font-semibold", row.active ? "text-indigo-400" : "text-muted-foreground")}>
+                      {row.input === row.output ? `${row.input} ₽` : `${row.input} / ${row.output} ₽`}
+                    </span>
                   </div>
-                  {row.active && row.input !== "—" && (
-                    <div className="mt-1 flex gap-4 text-xs text-muted-foreground">
-                      <span>входящие: <span className="font-medium text-foreground">{row.input}</span></span>
-                      <span>исходящие: <span className="font-medium text-foreground">{row.output}</span></span>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
           </div>
+          )}
         </Card>
         </Reveal>
 

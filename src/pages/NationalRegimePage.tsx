@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, ShieldAlert, ShieldCheck, ShieldOff, AlertTriangle, BookOpen, Loader2, Info, ChevronRight, Sparkles } from "lucide-react";
+import { Search, ShieldAlert, ShieldCheck, ShieldOff, AlertTriangle, BookOpen, Loader2, Info, Sparkles } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,10 +21,16 @@ interface DecreeMeta {
   note: string;
 }
 
+type Regime = "ban" | "restriction" | "preference";
+
 interface MatchItem {
   okpd: string;
   name: string;
-  regime: "ban" | "restriction" | "condition" | "none";
+  regime: Regime;
+  appendix: number;
+  position: string;
+  // covers — код запроса внутри позиции; inside — позиция уже кода (действует для части товаров)
+  scope: "covers" | "inside";
   decrees: string[];
   decreesDetail: DecreeMeta[];
   summary: string;
@@ -32,13 +38,25 @@ interface MatchItem {
   practicalNote?: string;
 }
 
+interface MinShareItem {
+  position: string;
+  name: string;
+  okpd: string;
+  share: number;
+  scope: "covers" | "inside";
+}
+
 interface LookupResult {
   okpd: string;
   found: boolean;
-  topRegime: "ban" | "restriction" | "condition" | "none";
+  topRegime: Regime;
+  partial: boolean;
+  summary: string;
   matches: MatchItem[];
+  insideTotal: number;
+  minShare: MinShareItem[];
   aiExplanation: string | null;
-  meta: { version: string; lastUpdated: string };
+  meta: { version: string; lastUpdated: string; edition: string; sourceUrl: string };
 }
 
 interface Suggestion {
@@ -70,7 +88,7 @@ const REGIME_CONFIG = {
     cardCls: "border-red-500/20 dark:border-red-500/15",
     headerCls: "bg-red-500/5",
     dot: "bg-red-500",
-    description: "Иностранный товар запрещён при наличии отечественных аналогов",
+    description: "Иностранные товары закупать нельзя (приложение № 1 ПП-1875)",
   },
   restriction: {
     label: "Ограничение",
@@ -79,27 +97,25 @@ const REGIME_CONFIG = {
     cardCls: "border-amber-500/20 dark:border-amber-500/15",
     headerCls: "bg-amber-500/5",
     dot: "bg-amber-400",
-    description: "Правило «второй/третий лишний» — иностранный товар может быть отклонён",
+    description: "«Второй лишний»: при допущенной заявке с российским товаром заявки с иностранными отклоняются (приложение № 2 ПП-1875)",
   },
-  condition: {
-    label: "Условия допуска",
+  preference: {
+    label: "Преимущество 15%",
     icon: ShieldCheck,
     cls: "bg-indigo-500/10 text-indigo-400 ring-indigo-500/20",
     cardCls: "border-indigo-500/20 dark:border-indigo-500/15",
     headerCls: "bg-indigo-500/5",
     dot: "bg-indigo-400",
-    description: "Ценовая преференция 15% для отечественных товаров (ПП-925, 223-ФЗ)",
-  },
-  none: {
-    label: "Без ограничений",
-    icon: ShieldCheck,
-    cls: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20",
-    cardCls: "border-emerald-500/20 dark:border-emerald-500/15",
-    headerCls: "bg-emerald-500/5",
-    dot: "bg-emerald-400",
-    description: "Данный код не попадает в известные перечни ограничений",
+    description: "Товар не в перечнях запрета и ограничения: цена заявки с российскими товарами при сравнении снижается на 15%",
   },
 };
+
+// Меры ПП-1875 — справка на пустой странице.
+const MEASURES = [
+  { regime: "ban" as const, title: "Запрет — приложение № 1", desc: "Ткани, одежда, мебель, машины и оборудование, транспорт, программное обеспечение и др." },
+  { regime: "restriction" as const, title: "Ограничение — приложение № 2", desc: "Правило «второй лишний»: радиоэлектроника, медицинские изделия, продукты и др." },
+  { regime: "preference" as const, title: "Преимущество 15% — остальные товары", desc: "Цена заявки с товарами только российского происхождения снижается на 15% при сравнении" },
+];
 
 function RegimeBadge({ regime }: { regime: keyof typeof REGIME_CONFIG }) {
   const cfg = REGIME_CONFIG[regime];
@@ -405,7 +421,9 @@ const NationalRegimePage = () => {
                       </span>
                       <RegimeBadge regime={result.topRegime} />
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{topCfg.description}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {result.partial ? `${topCfg.label} — для части товаров этого кода, см. позиции ниже` : topCfg.description}
+                    </p>
                   </div>
                 </div>
 
@@ -418,6 +436,10 @@ const NationalRegimePage = () => {
                           <code className="font-mono text-[11px] text-muted-foreground/60">ОКПД2 {match.okpd}</code>
                           <span className="text-[13px] font-medium text-foreground">{match.name}</span>
                           <RegimeBadge regime={match.regime} />
+                          <span className="text-[11px] text-muted-foreground/60">Приложение № {match.appendix}, позиция {match.position}</span>
+                          {match.scope === "inside" && (
+                            <span className="rounded bg-muted/50 px-1.5 text-[10px] text-muted-foreground">часть кода</span>
+                          )}
                         </div>
 
                         <p className="mb-3 text-[13px] text-foreground/80">{match.summary}</p>
@@ -454,18 +476,44 @@ const NationalRegimePage = () => {
                         )}
                       </div>
                     ))}
+                    {result.insideTotal > result.matches.filter((m) => m.scope === "inside").length && (
+                      <p className="text-[12px] text-muted-foreground">
+                        Показаны не все позиции внутри кода ({result.insideTotal}) — уточните код ОКПД2.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-start gap-3 rounded-lg border border-border/40 bg-muted/20 p-4">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
                     <div className="text-[13px] text-muted-foreground">
-                      Код ОКПД2 <b className="text-foreground">{result.okpd}</b> не найден в базе ограничений национального режима.
-                      Это может означать, что товар не входит в ни один из известных запретительных перечней.
-                      По 223-ФЗ всё равно может действовать ценовая преференция 15% (ПП-925).
+                      Код ОКПД2 <b className="text-foreground">{result.okpd}</b> не входит в перечни запрета и ограничения ПП-1875.
+                      {" "}{result.summary}
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* Минимальная доля (223-ФЗ, приложение № 3) */}
+              {result.minShare.length > 0 && (
+                <Card className="p-4 shadow-card">
+                  <p className="mb-2 text-[13px] font-semibold text-foreground">Минимальная доля закупок российских товаров (223-ФЗ, приложение № 3)</p>
+                  <p className="mb-3 text-[12px] text-muted-foreground">Для отдельных заказчиков по 223-ФЗ — доля в объёме закупок таких товаров за год.</p>
+                  <div className="space-y-1.5">
+                    {result.minShare.map((m) => (
+                      <div key={`${m.position}-${m.okpd}`} className="flex items-center gap-3 text-[12px]">
+                        <code className="font-mono text-muted-foreground/60">{m.okpd}</code>
+                        <span className="flex-1 text-foreground/80">{m.name}</span>
+                        <span className="font-semibold text-foreground">{m.share}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              <p className="text-[11px] text-muted-foreground/60">
+                Справочник: ПП РФ от 23.12.2024 № 1875, {result.meta.edition}. Источник —{" "}
+                <a href={result.meta.sourceUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">портал Правительства России</a>.
+              </p>
 
               {/* ИИ-объяснение */}
               <Card className="overflow-hidden shadow-card">
@@ -503,33 +551,19 @@ const NationalRegimePage = () => {
             <Card className="p-5 shadow-card">
               <div className="mb-4 flex items-center gap-2">
                 <BookOpen className="h-4 w-4 text-muted-foreground/50" />
-                <span className="text-sm font-semibold text-foreground">Основные постановления</span>
+                <span className="text-sm font-semibold text-foreground">Национальный режим: ПП РФ от 23.12.2024 № 1875</span>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {[
-                  { decree: "ПП-616", date: "30.04.2020", regime: "ban" as const, title: "Запрет промышленных товаров", desc: "Металл, машины, оборудование, мебель, текстиль, транспорт" },
-                  { decree: "ПП-878", date: "10.07.2019", regime: "restriction" as const, title: "Радиоэлектронная продукция", desc: "Компьютеры, телеком, электроника, оптика («второй лишний»)" },
-                  { decree: "ПП-1236", date: "16.11.2015", regime: "ban" as const, title: "Запрет иностранного ПО", desc: "Программное обеспечение, облачные сервисы, СУБД" },
-                  { decree: "ПП-102", date: "05.02.2015", regime: "restriction" as const, title: "Медицинские изделия и лекарства", desc: "Правило «третий лишний» (44-ФЗ)" },
-                  { decree: "ПП-925", date: "16.09.2016", regime: "condition" as const, title: "Условия допуска (223-ФЗ)", desc: "Ценовая преференция 15% для российских товаров" },
-                  { decree: "ПП-649", date: "17.07.2015", regime: "restriction" as const, title: "Транспортные средства", desc: "Автомобили, автобусы, спецтехника («второй лишний»)" },
-                ].map(({ decree, date, regime, title, desc }) => (
-                  <button
-                    key={decree}
-                    type="button"
-                    onClick={() => { setInput(decree); }}
-                    className="group flex items-start gap-3 rounded-lg border border-border/40 bg-card/40 p-3 text-left transition hover:border-indigo-500/30 hover:bg-indigo-500/5"
-                  >
+              <p className="mb-3 text-[12px] text-muted-foreground">
+                С 01.01.2025 действует единое постановление для 44-ФЗ и 223-ФЗ. Товары из ЕАЭС приравнены к российским (с оговорками по отдельным позициям).
+                Позиция применяется, только если товар соответствует и наименованию, и коду ОКПД2.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {MEASURES.map(({ regime, title, desc }) => (
+                  <div key={regime} className="flex flex-col gap-2 rounded-lg border border-border/40 bg-card/40 p-3">
                     <RegimeBadge regime={regime} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[12px] font-semibold text-foreground">{title}</span>
-                        <span className="ml-auto text-[10px] text-muted-foreground/40">{date}</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground/60">{desc}</p>
-                    </div>
-                    <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/20 transition group-hover:text-indigo-400" />
-                  </button>
+                    <span className="text-[12px] font-semibold text-foreground">{title}</span>
+                    <p className="text-[11px] text-muted-foreground/70">{desc}</p>
+                  </div>
                 ))}
               </div>
             </Card>

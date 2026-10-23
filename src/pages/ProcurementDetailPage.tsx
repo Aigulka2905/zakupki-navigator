@@ -16,6 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
+import { parseEtpDate } from "@/lib/etp-date";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { priceLabel } from "@/lib/money";
 import type { Procurement, ProcurementStatus, ChatMessage, ChatResponse } from "@/types/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -121,8 +124,8 @@ const fmtDate = (iso: string) =>
 
 const fmtRft = (val?: string | null) => {
   if (!val) return "—";
-  const d = new Date(val.replace(" ", "T"));
-  return isNaN(d.getTime()) ? val : d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const d = parseEtpDate(val);
+  return !d ? val : d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
 function daysLeft(deadline: string) {
@@ -176,7 +179,7 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
 
 // ─── Hero top-bar ─────────────────────────────────────────────────────────────
 
-function ProcurementHero({ p, live, score }: { p: Procurement; live: LiveData | null; score?: number }) {
+function ProcurementHero({ p, live, score, showScore = true }: { p: Procurement; live: LiveData | null; score?: number; showScore?: boolean }) {
   const meta = STATUS[p.status] ?? STATUS.draft;
   const days = daysLeft(p.applicationDeadline);
   const deadlineCls = days < 0 ? "text-muted-foreground" : days <= 7 ? "text-red-400" : days <= 14 ? "text-amber-400" : "text-foreground";
@@ -217,11 +220,11 @@ function ProcurementHero({ p, live, score }: { p: Procurement; live: LiveData | 
         <h1 className="text-[18px] font-bold leading-snug text-foreground">{p.title}</h1>
 
         {/* Metric strip */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className={cn("grid grid-cols-2 gap-3", showScore ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
           {/* Price */}
           <div className="rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-inset ring-border/40 dark:bg-background/40 dark:ring-white/[0.05]">
             <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">Цена</div>
-            <div className="mt-1.5 text-[15px] font-bold tracking-tight text-foreground">{fmt(p.initialPrice)}</div>
+            <div className="mt-1.5 text-[15px] font-bold tracking-tight text-foreground">{priceLabel(p.initialPrice, { compact: false }) ?? "Не указана"}</div>
             <div className="mt-0.5 text-[10px] text-muted-foreground/50">{p.currency}</div>
           </div>
 
@@ -243,7 +246,8 @@ function ProcurementHero({ p, live, score }: { p: Procurement; live: LiveData | 
             <div className="mt-1.5 text-[13px] font-semibold text-foreground">{fmtDate(p.publicationDate)}</div>
           </div>
 
-          {/* Score */}
+          {/* Score — только участнику: заказчик смотрит свои закупки */}
+          {showScore && (
           <div className="rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-inset ring-border/40 dark:bg-background/40 dark:ring-white/[0.05]">
             <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">Релевантность</div>
             <div className="mt-1.5 flex items-center gap-2">
@@ -257,6 +261,7 @@ function ProcurementHero({ p, live, score }: { p: Procurement; live: LiveData | 
               <div className={cn("h-1 rounded-full transition-all", sg.bar)} style={{ width: `${displayScore}%` }} />
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -756,7 +761,7 @@ function TabAiInsights({
             <span className="text-[12px] font-semibold text-foreground">Потенциал</span>
           </div>
           <p className="text-[12px] text-muted-foreground leading-relaxed">
-            Начальная цена {fmt(p.initialPrice)} — {score >= 60 ? "высокая вероятность успешного участия" : "оцените соответствие требованиям"}
+            Начальная цена {priceLabel(p.initialPrice, { compact: false }) ?? "не указана"} — {score >= 60 ? "высокая вероятность успешного участия" : "оцените соответствие требованиям"}
           </p>
         </GlassCard>
 
@@ -865,7 +870,7 @@ function TabChat({ procurementId, p }: { procurementId: string; p: Procurement }
     { icon: CheckCircle2,  label: "Проверить документацию", text: `Проверь документацию по закупке «${p.title}» на соответствие 223-ФЗ` },
     { icon: CalendarClock, label: "Сроки",                  text: `Какие минимальные сроки подачи заявок для закупки №${p.number}?` },
     { icon: AlertTriangle, label: "Риски и нарушения",      text: `Какие риски и возможные нарушения 223-ФЗ есть в закупке «${p.title}»?` },
-    { icon: TrendingUp,    label: "Шансы на победу",        text: `Оцени наши шансы на победу в закупке №${p.number} с начальной ценой ${fmt(p.initialPrice)}` },
+    { icon: TrendingUp,    label: "Шансы на победу",        text: `Оцени наши шансы на победу в закупке №${p.number} ${priceLabel(p.initialPrice, { compact: false }) ? `с начальной ценой ${priceLabel(p.initialPrice, { compact: false })}` : "(начальная цена не указана)"}` },
   ];
 
   return (
@@ -1007,6 +1012,10 @@ function TabChat({ procurementId, p }: { procurementId: string; p: Procurement }
 const ProcurementDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState("info");
+  const { data: currentUser } = useCurrentUser();
+  // Оценка релевантности и вкладка «AI Анализ» — для участника; заказчику не нужны,
+  // а /why — лишний вызов модели.
+  const isCustomer = currentUser?.organization?.orgType === "customer";
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["procurement-live", id],
@@ -1019,7 +1028,7 @@ const ProcurementDetailPage = () => {
   const { data: whyData, isLoading: whyLoading } = useQuery({
     queryKey: ["procurement-why", id],
     queryFn: () => fetchWhy(id!),
-    enabled: !!id && !!data?.procurement,
+    enabled: !!id && !!data?.procurement && !!currentUser && !isCustomer,
     staleTime: 300_000,
     retry: 1,
   });
@@ -1090,7 +1099,7 @@ const ProcurementDetailPage = () => {
         </Button>
 
         {/* Hero — pass live per-user score once /why resolves */}
-        <ProcurementHero p={p} live={live} score={whyData?.score} />
+        <ProcurementHero p={p} live={live} score={whyData?.score} showScore={!isCustomer} />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1100,7 +1109,7 @@ const ProcurementDetailPage = () => {
               { value: "docs",    icon: FileText,      label: "Документы",  count: totalDocs },
               { value: "ai",      icon: Sparkles,      label: "AI Анализ",  count: 0 },
               { value: "chat",    icon: MessageSquare, label: "Чат",        count: 0 },
-            ].map(({ value, icon: Icon, label, count }) => (
+            ].filter((t) => !(isCustomer && t.value === "ai")).map(({ value, icon: Icon, label, count }) => (
               <TabsTrigger
                 key={value}
                 value={value}
@@ -1122,9 +1131,11 @@ const ProcurementDetailPage = () => {
 
           <TabsContent value="info"  className="mt-4"><TabInfo p={p} live={live} /></TabsContent>
           <TabsContent value="docs"  className="mt-4"><TabDocuments live={live} /></TabsContent>
-          <TabsContent value="ai"    className="mt-4">
-            <TabAiInsights p={p} whyData={whyData} whyLoading={whyLoading} onOpenChat={() => setActiveTab("chat")} />
-          </TabsContent>
+          {!isCustomer && (
+            <TabsContent value="ai"    className="mt-4">
+              <TabAiInsights p={p} whyData={whyData} whyLoading={whyLoading} onOpenChat={() => setActiveTab("chat")} />
+            </TabsContent>
+          )}
           <TabsContent value="chat"  className="mt-4">
             <TabChat procurementId={p.id} p={p} />
           </TabsContent>

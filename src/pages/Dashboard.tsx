@@ -39,6 +39,7 @@ import type { DashboardStats, Procurement } from "@/types/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/Reveal";
+import { priceLabel } from "@/lib/money";
 
 // ── API ───────────────────────────────────────────────────────
 
@@ -67,12 +68,6 @@ async function fetchMyProcurements(): Promise<{ data: Procurement[]; total: numb
 
 // ── Helpers ───────────────────────────────────────────────────
 
-function fmt(price: string | number) {
-  const n = Number(price);
-  if (n >= 1_000_000)
-    return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 1, notation: "compact" }).format(n);
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);
-}
 
 function fmtDate(iso: string | null, opts?: Intl.DateTimeFormatOptions): string {
   if (!iso) return "—";
@@ -181,7 +176,7 @@ function DeadlineItem({ p, isLast }: { p: Procurement; isLast: boolean }) {
           {p.title}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground/55">
-          {p.initialPrice && <span>{fmt(p.initialPrice)}</span>}
+          {priceLabel(p.initialPrice) && <span>{priceLabel(p.initialPrice)}</span>}
           {p.procedureType && <><span>·</span><span className="truncate max-w-[120px]">{p.procedureType}</span></>}
         </div>
       </div>
@@ -228,7 +223,7 @@ function MyProcItem({ p }: { p: Procurement }) {
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground/55">
           {p.number && <span className="font-mono">{p.number}</span>}
-          {p.initialPrice && <><span>·</span><span className="font-medium text-foreground/70">{fmt(p.initialPrice)}</span></>}
+          {priceLabel(p.initialPrice) && <><span>·</span><span className="font-medium text-foreground/70">{priceLabel(p.initialPrice)}</span></>}
           {p.etp?.name && <><span>·</span><span>{p.etp.name}</span></>}
         </div>
       </div>
@@ -301,8 +296,8 @@ function RecItem({ p }: { p: Procurement }) {
           />
         </div>
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/55">
-          <span>{fmt(p.initialPrice)}</span>
-          {p.etp?.name && <><span>·</span><span>{p.etp.name}</span></>}
+          {priceLabel(p.initialPrice) && <span>{priceLabel(p.initialPrice)}</span>}
+          {p.etp?.name && <>{priceLabel(p.initialPrice) && <span>·</span>}<span>{p.etp.name}</span></>}
           <span>·</span>
           <span className={cn(
             "font-medium",
@@ -354,7 +349,7 @@ const Dashboard = () => {
   const myProcs = myProcsResult?.data ?? [];
   const myProcsTotal = myProcsResult?.total ?? 0;
 
-  const { data: recommendations = [] } = useQuery({
+  const { data: recommendations = [], isLoading: recsLoading } = useQuery({
     queryKey: ["dashboard-recommendations"],
     queryFn: fetchRecommendations,
     staleTime: 120_000,
@@ -644,7 +639,7 @@ const Dashboard = () => {
                       <Sparkles className="h-5 w-5 text-indigo-400/60" />
                     </div>
                     <div>
-                      <p className="text-[13px] text-muted-foreground/50">Закупки загружаются...</p>
+                      <p className="text-[13px] text-muted-foreground/50">{recsLoading ? "Закупки загружаются..." : "Пока нет рекомендаций"}</p>
                       <p className="mt-1 text-[11px] text-muted-foreground/35">
                         Заполните{" "}
                         <Link to="/organization" className="text-indigo-400/70 underline underline-offset-2 hover:text-indigo-400">
@@ -711,7 +706,7 @@ const Dashboard = () => {
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-3 text-[11px]">
-                        <span className="text-muted-foreground/50 tabular-nums">{fmt(p.initialPrice)}</span>
+                        {priceLabel(p.initialPrice) && <span className="text-muted-foreground/50 tabular-nums">{priceLabel(p.initialPrice)}</span>}
                         <div className="flex items-center gap-1 text-muted-foreground/45">
                           <CalendarClock className="h-3 w-3" />
                           <span>{fmtDate(p.applicationDeadline)}</span>

@@ -6,6 +6,7 @@ import {
   Loader2, ShieldAlert, CheckCircle2, AlertTriangle, XCircle, Printer, Users,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { parseInnList, type InnList } from "@/lib/inn";
 
 interface Flags {
   rnp: boolean; disqualified: boolean; sanctions: boolean;
@@ -60,13 +61,18 @@ export default function BatchCheckPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
-
-  const parseInns = (s: string) => [...new Set((s.match(/\d{10,12}/g) ?? []))];
+  // Строки, которые не ИНН, — не в проверке; показываем, чтобы не казалось, что проверены все.
+  const [skipped, setSkipped] = useState<InnList["invalid"]>([]);
 
   const run = async () => {
     setError(null);
-    const inns = parseInns(text);
-    if (inns.length === 0) { setError("Введите ИНН участников (10 или 12 цифр), по одному в строке или через запятую"); return; }
+    const { inns, invalid } = parseInnList(text);
+    setSkipped(invalid);
+    if (inns.length === 0) {
+      setRows(null);
+      if (!invalid.length) setError("Введите ИНН участников (10 или 12 цифр), по одному в строке или через запятую");
+      return;
+    }
     setLoading(true);
     setRows(null);
     try {
@@ -116,6 +122,16 @@ export default function BatchCheckPage() {
           {error && (
             <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+            </div>
+          )}
+          {skipped.length > 0 && (
+            <div className="mt-3 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> Не проверены — исправьте и запустите снова:
+              </div>
+              <ul className="mt-1 list-disc pl-8 font-mono text-xs">
+                {skipped.map((x, i) => <li key={`${x.value}-${i}`}>{x.value}: {x.reason}</li>)}
+              </ul>
             </div>
           )}
           <div className="mt-3">
