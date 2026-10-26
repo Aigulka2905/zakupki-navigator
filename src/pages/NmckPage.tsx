@@ -5,111 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Upload, FileText, Loader2, Printer, Calculator, Plus, Trash2,
-  AlertTriangle, FileCheck2, XCircle, Sparkles, Clock, Search, ExternalLink, Database,
+  AlertTriangle, FileCheck2, XCircle, Sparkles, Clock, ExternalLink, Database,
 } from "lucide-react";
 import apiClient from "@/lib/api-client";
+import { EisSearchPanel } from "@/components/nmck/EisSearchPanel";
+import {
+  compute, homogenize, cvOfPrices, eisToPrice, missingInKp, posVat, fmt,
+  CV_THRESHOLD, MIN_SOURCES, DEFAULT_VAT, VAT_OPTIONS,
+  type Price, type Position, type KpSource, type EisItem,
+} from "@/lib/nmck";
 
-// excluded — цена исключена из расчёта (аномальная), приходит и с бэкенда.
-interface Price { source: string; unitPrice: number | string; vatRate?: number | string; excluded?: boolean; }
-interface Position { name: string; unit: string; quantity: number | string; vatRate?: number | string; prices: Price[]; }
 interface Calc {
   id: string; title: string; status: "processing" | "completed" | "failed";
   positions?: Position[]; nmck?: number | null; cvMax?: number | null;
-  justification?: string | null; sources?: { name: string }[]; createdAt: string;
+  justification?: string | null; sources?: KpSource[]; createdAt: string;
 }
 interface HistoryItem { id: string; title: string; status: Calc["status"]; nmck: number | null; createdAt: string; }
-interface EisItem {
-  contractNumber: string; customer: string; supplier: string; supplierInn: string;
-  positionName: string; unit: string; quantity: number | null; unitPrice: number;
-  contractPrice: number | null; date: string; url: string;
-}
 
-const CV_THRESHOLD = 33;
-const MIN_SOURCES = 3;
-const DEFAULT_VAT = 22; // основная ставка НДС с 01.01.2026 (ФЗ-425 от 28.11.2025)
-const VAT_OPTIONS = [22, 20, 10, 0]; // 20% — для цен из КП и контрактов до 2026 года
-const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—");
-const floor2 = (x: number) => Math.floor(x * 100 + 1e-6) / 100;
-const toComparable = (raw: number, vr: number | null, target: number) =>
-  vr != null && Number.isFinite(vr) && vr !== target ? (raw / (1 + vr / 100)) * (1 + target / 100) : raw;
-const priceVat = (x: Price): number | null => (x.vatRate === "" || x.vatRate == null ? null : Number(x.vatRate));
-const posVat = (p: Position) => (Number.isFinite(Number(p.vatRate)) ? Number(p.vatRate) : DEFAULT_VAT);
-
-// Коэф. вариации по набору сопоставимых цен (для предупреждений при подборе из ЕИС).
-function cvOfPrices(prices: Price[], targetVat: number) {
-  const vals = prices
-    .filter((x) => !x.excluded)
-    .map((x) => ({ raw: Number(x.unitPrice), c: toComparable(Number(x.unitPrice), priceVat(x), targetVat) }))
-    .filter((v) => Number.isFinite(v.raw) && v.raw > 0);
-  const n = vals.length;
-  if (n < 2) return { cv: 0, n };
-  const mean = vals.reduce((s, v) => s + v.c, 0) / n;
-  if (mean <= 0) return { cv: 0, n };
-  const variance = vals.reduce((s, v) => s + (v.c - mean) ** 2, 0) / (n - 1);
-  return { cv: (Math.sqrt(variance) / mean) * 100, n };
-}
-
-// Приведение к однородности (зеркалит backend homogenizePrices): пошагово помечает
-// excluded самую отклоняющуюся цену, пока V ≤ 33% и активных источников ≥ MIN_SOURCES.
-function homogenize(prices: Price[], targetVat: number): Price[] {
-  const src = prices.map((p) => ({ ...p, excluded: false }));
-  const items = src
-    .map((p, i) => ({ i, raw: Number(p.unitPrice), c: toComparable(Number(p.unitPrice), priceVat(p), targetVat) }))
-    .filter((x) => Number.isFinite(x.raw) && x.raw > 0);
-  const excluded = new Set<number>();
-  const active = () => items.filter((x) => !excluded.has(x.i));
-  const cvOf = () => {
-    const a = active();
-    const n = a.length;
-    if (n < 2) return { cv: 0, n, mean: a[0]?.c ?? 0 };
-    const mean = a.reduce((s, x) => s + x.c, 0) / n;
-    if (mean <= 0) return { cv: 0, n, mean };
-    const variance = a.reduce((s, x) => s + (x.c - mean) ** 2, 0) / (n - 1);
-    return { cv: (Math.sqrt(variance) / mean) * 100, n, mean };
-  };
-  for (;;) {
-    const { cv, n, mean } = cvOf();
-    if (cv <= CV_THRESHOLD || n <= MIN_SOURCES) break;
-    let far: (typeof items)[number] | null = null, dist = -1;
-    for (const x of active()) { const d = Math.abs(x.c - mean); if (d > dist) { dist = d; far = x; } }
-    if (!far) break;
-    excluded.add(far.i);
-  }
-  excluded.forEach((i) => { src[i].excluded = true; });
-  return src;
-}
-
-// Локальный расчёт для живого превью (сервер — источник истины при сохранении).
-// Зеркалит backend/src/utils/nmck.js: приведение к базе НДС позиции, СКО σ (n−1),
-// округление денежных итогов ВНИЗ до сотых (форма Приказа №567). Исключённые
-// (excluded) цены в расчёте не участвуют.
-function compute(positions: Position[]) {
-  let nmck = 0, cvMax = 0;
-  const rows = positions.map((p) => {
-    const targetVat = posVat(p);
-    const all = p.prices
-      .map((x) => ({ raw: Number(x.unitPrice), comparable: toComparable(Number(x.unitPrice), priceVat(x), targetVat), excluded: !!x.excluded }))
-      .filter((v) => Number.isFinite(v.raw) && v.raw > 0);
-    const prices = all.filter((v) => !v.excluded);
-    const excludedCount = all.length - prices.length;
-    const n = prices.length;
-    let avg = 0, std = 0, cv = 0;
-    if (n > 0) {
-      avg = prices.reduce((s, v) => s + v.comparable, 0) / n;
-      if (n >= 2 && avg > 0) {
-        const variance = prices.reduce((s, v) => s + (v.comparable - avg) ** 2, 0) / (n - 1);
-        std = Math.sqrt(variance);
-        cv = (std / avg) * 100;
-      }
-    }
-    const qty = Number(p.quantity) || 0;
-    const unitPriceRounded = floor2(avg);
-    const sum = floor2(unitPriceRounded * qty); // НМЦК с учётом округления цены за ед.
-    nmck += sum; cvMax = Math.max(cvMax, cv);
-    return { avg, std, cv, sum, n, excludedCount, targetVat };
-  });
-  return { rows, nmck: floor2(nmck), cvMax };
-}
+const KIND_LABEL: Record<string, string> = { kp: "КП", eis: "ЕИС", manual: "вручную" };
 
 const PRINT_CSS = `
 @media print {
@@ -135,15 +48,9 @@ export default function NmckPage() {
   const [law, setLaw] = useState<"223" | "44">("223");
   const pollRef = useRef<number | null>(null);
 
-  // ЕИС-поиск цен
-  const [eisQuery, setEisQuery] = useState("");
-  const [eisUnit, setEisUnit] = useState("");
-  const [eisLoading, setEisLoading] = useState(false);
-  const [eisItems, setEisItems] = useState<EisItem[] | null>(null);
-  const [eisSel, setEisSel] = useState<Set<number>>(new Set());
-  const [eisError, setEisError] = useState<string | null>(null);
+  // ЕИС: предупреждение после добавления позиции; позиция, у которой открыт поиск.
   const [eisWarn, setEisWarn] = useState<string | null>(null);
-  const eisPoll = useRef<number | null>(null);
+  const [eisFor, setEisFor] = useState<number | null>(null);
 
   const loadHistory = async () => {
     try { const { data } = await apiClient.get<HistoryItem[]>("/nmck"); setHistory(data); } catch { /* ignore */ }
@@ -187,10 +94,19 @@ export default function NmckPage() {
   const addPrice = (i: number) => upd((p) => { p[i].prices.push({ source: "", unitPrice: "", vatRate: DEFAULT_VAT }); return p; });
   const delPrice = (i: number, j: number) => upd((p) => { p[i].prices.splice(j, 1); return p; });
   const addPosition = () => upd((p) => [...p, { name: "", unit: "", quantity: "", vatRate: DEFAULT_VAT, prices: [{ source: "", unitPrice: "", vatRate: DEFAULT_VAT }] }]);
-  const delPosition = (i: number) => upd((p) => p.filter((_, j) => j !== i));
+  const delPosition = (i: number) => { setEisFor(null); upd((p) => p.filter((_, j) => j !== i)); };
   const homogenizePos = (i: number) => upd((p) => { p[i].prices = homogenize(p[i].prices, posVat(p[i])); return p; });
   const resetExclusions = (i: number) => upd((p) => { p[i].prices = p[i].prices.map((x) => ({ ...x, excluded: false })); return p; });
-  const toggleExcluded = (i: number, j: number) => upd((p) => { p[i].prices[j].excluded = !p[i].prices[j].excluded; return p; });
+  // Исключение вручную — с полем для причины (она идёт в отчёт); возврат снимает причину.
+  const toggleExcluded = (i: number, j: number) => upd((p) => {
+    const { excludeReason: _r, ...pr } = p[i].prices[j];
+    p[i].prices[j] = pr.excluded ? { ...pr, excluded: false } : { ...pr, excluded: true, excludeReason: "" };
+    return p;
+  });
+  const addEisToPosition = (i: number, items: EisItem[]) => {
+    upd((p) => { p[i].prices.push(...items.map(eisToPrice)); return p; });
+    setEisFor(null);
+  };
 
   const save = async () => {
     if (!calc) return;
@@ -244,45 +160,15 @@ export default function NmckPage() {
     } catch { setError("Не удалось создать расчёт"); }
   };
 
-  const eisSearch = async () => {
-    const q = eisQuery.trim();
-    if (q.length < 3) { setEisError("Введите наименование (от 3 символов)"); return; }
-    setEisError(null); setEisWarn(null); setEisLoading(true); setEisItems(null); setEisSel(new Set());
-    if (eisPoll.current) window.clearTimeout(eisPoll.current);
-    try {
-      const { data } = await apiClient.post<{ searchId: string }>("/eis/search", { query: q, unit: eisUnit.trim() || undefined });
-      const poll = async () => {
-        const { data: r } = await apiClient.get<{ status: string; items?: EisItem[]; error?: string }>(`/eis/search/${data.searchId}`);
-        if (r.status === "processing") { eisPoll.current = window.setTimeout(poll, 1500); return; }
-        setEisLoading(false);
-        if (r.status === "failed") { setEisError(r.error || "Поиск не удался"); return; }
-        setEisItems(r.items ?? []);
-      };
-      poll();
-    } catch (e: unknown) {
-      setEisLoading(false);
-      const err = e as { response?: { data?: { error?: string } } };
-      setEisError(err.response?.data?.error ?? "Не удалось запустить поиск");
-    }
-  };
-
-  const addEisAsPosition = () => {
-    if (!eisItems) return;
-    const chosen = eisItems.filter((_, i) => eisSel.has(i));
-    if (chosen.length === 0) return;
-    const unit = eisUnit.trim() || chosen.find((c) => c.unit)?.unit || "";
+  const addEisAsPosition = (chosen: EisItem[], query: string, unitFilter: string) => {
+    const unit = unitFilter || chosen.find((c) => c.unit)?.unit || "";
     const qty = chosen.find((c) => c.quantity)?.quantity || 1;
-    const prices: Price[] = chosen.map((c) => ({
-      source: `${c.supplier || "Поставщик"} · контракт №${c.contractNumber}`,
-      unitPrice: c.unitPrice,
-      vatRate: DEFAULT_VAT,
-    }));
-    upd((p) => [...p, { name: eisQuery.trim(), unit, quantity: qty, vatRate: DEFAULT_VAT, prices }]);
+    const prices: Price[] = chosen.map(eisToPrice);
+    upd((p) => [...p, { name: query, unit, quantity: qty, vatRate: DEFAULT_VAT, prices }]);
     const { cv, n } = cvOfPrices(prices, DEFAULT_VAT);
     if (n >= 2 && cv > CV_THRESHOLD) {
       setEisWarn(`Подобранные цены неоднородны (V=${fmt(cv)}% > ${CV_THRESHOLD}%) — вероятно, контракты разного масштаба. Нажмите «Привести к однородности» у позиции ниже либо уточните запрос (конкретная модель/ед. изм.).`);
     } else setEisWarn(null);
-    setEisItems(null); setEisSel(new Set()); setEisQuery("");
   };
 
   const fmtDate = (s: string) => new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
@@ -379,53 +265,22 @@ export default function NmckPage() {
                   </div>
                 </div>
 
-                {/* ЕИС: поиск цен в реестре контрактов */}
-                <div className="rounded-lg border border-border p-3 no-print">
+                {/* ЕИС: поиск цен в реестре контрактов — новая позиция */}
+                <EisSearchPanel label="Подбор цен из ЕИС" addLabel={(n) => `Добавить выбранные (${n}) как позицию`} onAdd={addEisAsPosition}>
                   <p className="text-sm font-medium flex items-center gap-1.5"><Database className="h-4 w-4 text-primary" /> Подбор цен из ЕИС (реестр контрактов)</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">Введите <b>конкретную</b> позицию (напр. «стул офисный», а не «мебель») и, по возможности, единицу измерения — система подберёт однородные цены за единицу из прошедших контрактов.</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Input value={eisQuery} onChange={(e) => setEisQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="напр. стул офисный" className="max-w-sm flex-1" />
-                    <Input value={eisUnit} onChange={(e) => setEisUnit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && eisSearch()} placeholder="ед. изм. (напр. шт)" className="w-40" title="Фильтр по единице измерения — оставит только сопоставимые цены" />
-                    <Button size="sm" onClick={eisSearch} disabled={eisLoading}>
-                      {eisLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1.5 h-3.5 w-3.5" />}Найти
-                    </Button>
-                  </div>
-                  {eisError && <p className="mt-1.5 text-xs text-destructive">{eisError}</p>}
-                  {eisWarn && (
-                    <p className="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{eisWarn}
-                    </p>
-                  )}
-                  {eisLoading && <p className="mt-2 text-xs text-muted-foreground">Ищем в ЕИС (это может занять ~10–30 с)…</p>}
-                  {eisItems && (
-                    eisItems.length === 0 ? (
-                      <p className="mt-2 text-xs text-muted-foreground">Контракты с ценами не найдены. Уточните запрос.</p>
-                    ) : (
-                      <div className="mt-2 space-y-1.5">
-                        {eisItems.map((it, i) => (
-                          <label key={i} className="flex cursor-pointer items-start gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted/40">
-                            <input type="checkbox" className="mt-0.5" checked={eisSel.has(i)} onChange={(e) => setEisSel((s) => { const n = new Set(s); e.target.checked ? n.add(i) : n.delete(i); return n; })} />
-                            <span className="min-w-0 flex-1">
-                              <span className="font-medium">{fmt(it.unitPrice)} ₽{it.unit ? `/${it.unit}` : ""}</span>
-                              {" — "}{it.supplier || "поставщик не указан"}{it.supplierInn ? ` (ИНН ${it.supplierInn})` : ""}
-                              <span className="block text-muted-foreground">{it.positionName} · контракт №{it.contractNumber}{it.date ? ` от ${it.date}` : ""}
-                                <a href={it.url} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center text-primary" onClick={(e) => e.stopPropagation()}><ExternalLink className="h-3 w-3" /></a>
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                        <Button size="sm" variant="outline" className="mt-1" disabled={eisSel.size === 0} onClick={addEisAsPosition}>
-                          <Plus className="mr-1 h-3.5 w-3.5" />Добавить выбранные ({eisSel.size}) как позицию
-                        </Button>
-                      </div>
-                    )
-                  )}
-                </div>
+                </EisSearchPanel>
+                {eisWarn && (
+                  <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400 no-print">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{eisWarn}
+                  </p>
+                )}
 
                 {/* Позиции */}
                 <div className="space-y-3">
                   {positions.map((p, i) => {
                     const r = live.rows[i];
+                    const missing = missingInKp(p, calc.sources ?? []);
                     return (
                       <div key={i} className="rounded-lg border border-border p-3">
                         <div className="flex flex-wrap items-center gap-2">
@@ -443,7 +298,8 @@ export default function NmckPage() {
                         </div>
                         <div className="mt-2 space-y-1.5">
                           {p.prices.map((pr, j) => (
-                            <div key={j} className={`flex items-center gap-2 ${pr.excluded ? "opacity-55" : ""}`}>
+                            <div key={j}>
+                            <div className={`flex items-center gap-2 ${pr.excluded ? "opacity-55" : ""}`}>
                               <Input value={pr.source} onChange={(e) => setPrice(i, j, "source", e.target.value)} placeholder="Источник (КП)" className={`h-8 flex-1 text-sm ${pr.excluded ? "line-through" : ""}`} />
                               <Input value={String(pr.unitPrice)} onChange={(e) => setPrice(i, j, "unitPrice", e.target.value)} placeholder="цена за ед." type="number" className={`h-8 w-32 text-sm ${pr.excluded ? "line-through" : ""}`} />
                               <select
@@ -459,17 +315,40 @@ export default function NmckPage() {
                               </Button>
                               <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive no-print" onClick={() => delPrice(i, j)}><XCircle className="h-3.5 w-3.5" /></Button>
                             </div>
+                            <PriceSource pr={pr} />
+                            {pr.excluded && (
+                              <Input value={pr.excludeReason ?? ""} onChange={(e) => setPrice(i, j, "excludeReason", e.target.value)}
+                                placeholder="Причина исключения (попадёт в отчёт)" className="mt-1 h-7 text-xs no-print" />
+                            )}
+                            </div>
                           ))}
                           <Button size="sm" variant="ghost" className="h-7 text-xs no-print" onClick={() => addPrice(i)}><Plus className="mr-1 h-3 w-3" />цена</Button>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-t border-border pt-2">
                           <span>Средняя (с НДС {r.targetVat}%): <b>{fmt(r.avg)} ₽</b></span>
+                          <span>мин.: {fmt(r.min)}</span>
+                          <span>медиана: {fmt(r.median)}</span>
                           <span>σ: {fmt(r.std)}</span>
                           <span className={r.cv > CV_THRESHOLD ? "text-destructive font-medium" : ""}>Коэф. вариации: {fmt(r.cv)}% {r.cv > CV_THRESHOLD ? "⚠ >33%" : r.n >= 2 ? "✓" : ""}</span>
                           <span>Сумма: <b>{fmt(r.sum)} ₽</b></span>
                           <span className={r.n > 0 && r.n < MIN_SOURCES ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>источников: {r.n}{r.n > 0 && r.n < MIN_SOURCES ? ` (нужно ≥${MIN_SOURCES})` : ""}</span>
                           {r.excludedCount > 0 && <span className="text-muted-foreground">исключено: {r.excludedCount}</span>}
                         </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 no-print">
+                          {missing.length > 0 && <span className="text-[11px] text-amber-600 dark:text-amber-400">нет в КП: {missing.join(", ")}</span>}
+                          <Button size="sm" variant={missing.length > 0 || r.cv > CV_THRESHOLD ? "outline" : "ghost"} className="h-7 text-xs"
+                            onClick={() => setEisFor(eisFor === i ? null : i)}>
+                            <Database className="mr-1 h-3.5 w-3.5" />Найти в ЕИС
+                          </Button>
+                        </div>
+                        {eisFor === i && (
+                          <div className="mt-2">
+                            <EisSearchPanel label={`Поиск в ЕИС для позиции «${p.name}»`} initialQuery={p.name} initialUnit={p.unit}
+                              addLabel={(n) => `Добавить к позиции (${n})`} onAdd={(items) => addEisToPosition(i, items)}>
+                              <p className="text-xs text-muted-foreground">Цены прошедших контрактов по этой позиции — выбранные добавятся ценами с типом «ЕИС» и ссылкой на контракт.</p>
+                            </EisSearchPanel>
+                          </div>
+                        )}
                         {(r.cv > CV_THRESHOLD || r.excludedCount > 0) && (
                           <div className="mt-2 flex flex-wrap items-center gap-2 no-print">
                             {r.cv > CV_THRESHOLD && r.n > MIN_SOURCES && (
@@ -529,5 +408,31 @@ export default function NmckPage() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+// Откуда цена: тип, наименование в источнике, обоснование сопоставления (ИИ), ссылка ЕИС.
+function PriceSource({ pr }: { pr: Price }) {
+  const details = pr.kind || pr.offerName || pr.url || pr.vatExempt || pr.unverified || pr.vatMode === "сверху";
+  if (!details && !pr.matchNote) return null;
+  return (
+    <div className="ml-1 mt-0.5 space-y-0.5 text-[11px] text-muted-foreground">
+      {details && (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          {pr.kind && <span className="rounded bg-muted px-1.5 py-px text-[10px]">{KIND_LABEL[pr.kind] ?? pr.kind}</span>}
+          {pr.offerName && <span>В {pr.kind === "eis" ? "контракте" : "КП"}: «{pr.offerName}»</span>}
+          {pr.kind === "eis" && pr.date && <span>от {pr.date}</span>}
+          {pr.url && /^https?:\/\//.test(pr.url) && (
+            <a href={pr.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-primary">карточка контракта <ExternalLink className="h-3 w-3" /></a>
+          )}
+          {pr.vatMode === "сверху" && pr.sourcePrice != null && <span>в КП {fmt(Number(pr.sourcePrice))} ₽ + НДС {pr.vatRate}%</span>}
+          {pr.vatExempt && <span>НДС не облагается — без пересчёта</span>}
+          {pr.unverified && <span className="text-amber-600 dark:text-amber-400">цена не найдена в тексте КП — проверьте</span>}
+        </div>
+      )}
+      {pr.matchNote && (
+        <p className="flex gap-1 italic text-indigo-600 dark:text-indigo-300"><Sparkles className="mt-0.5 h-3 w-3 shrink-0" />{pr.matchNote}</p>
+      )}
+    </div>
   );
 }
