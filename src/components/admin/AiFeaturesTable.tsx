@@ -19,6 +19,7 @@ const FEATURE_LABELS: Record<string, string> = {
   eis: "Цены из ЕИС",
   analysis: "Анализ документа",
   national_regime: "Национальный режим",
+  procurement_policy: "Разбор Положения о закупке",
   other: "Прочее (служебные вызовы)",
 };
 

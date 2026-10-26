@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,13 @@ import { PackageUploader } from "@/components/PackageUploader";
 import { JobProgressCard } from "@/components/JobProgressCard";
 import { PackageReport } from "@/components/PackageReport";
 import { usePackageUpload } from "@/hooks/usePackageUpload";
-import type { JobProgress, PackageFileReport } from "@/types/api";
+import { fetchProcurementPolicy } from "@/lib/procurement-policy";
+import type { JobProgress, PackageFileReport, ProcurementPolicy } from "@/types/api";
 
 interface Citation { kind?: string; title?: string; law?: string; article?: string; docNumber?: string; authority?: string; url?: string; quote?: string; }
-interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; file?: string; }
-interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; coverage?: Coverage | null; files?: PackageFileReport[]; error?: string; }
+interface Risk { title: string; severity: string; place: string; why: string; fix: string; topic?: string; confidence?: string; citations?: Citation[]; file?: string; policyRule?: string; }
+// policy — с каким Положением о закупке сверена документация (223-ФЗ).
+interface ReviewResult { overallRisk: string; summary: string; risks: Risk[]; mode?: string; coverage?: Coverage | null; files?: PackageFileReport[]; error?: string; policy?: { fileName: string; rules: number; updatedAt?: string | null } | null; }
 interface AnalysisRecord { id: string; status: "processing" | "completed" | "failed"; progress?: JobProgress | null; analysisResult?: ReviewResult | null; }
 
 const MODE_LAWS: Record<string, string> = {
@@ -51,7 +53,8 @@ function overallStyle(s: string) {
 const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function buildHtml(r: ReviewResult): string {
   const rows = r.risks.map((x, i) => {
-    const cites = (x.citations ?? []).map((c) => `${esc(citeLabel(c))}${c.url ? ` (${esc(c.url)})` : ""}`).join("; ");
+    // У пункта Положения о закупке ссылки нет — основание держится на цитате.
+    const cites = (x.citations ?? []).map((c) => `${esc(citeLabel(c))}${c.url ? ` (${esc(c.url)})` : ""}${c.kind === "policy" && c.quote ? ` — «${esc(c.quote)}»` : ""}`).join("; ");
     return `<tr><td>${i + 1}</td><td><b>${esc(x.title)}</b><div class="s">${esc(x.severity)}${x.file ? ` · ${esc(x.file)}` : ""}</div></td>
      <td>${x.place ? `<div class="q">«${esc(x.place)}»</div>` : ""}<div>${esc(x.why)}</div>${x.fix ? `<div class="f"><b>Исправить:</b> ${esc(x.fix)}</div>` : ""}${cites ? `<div class="c"><b>Основание:</b> ${cites}</div>` : ""}</td></tr>`;
   }).join("");
@@ -64,6 +67,7 @@ function buildHtml(r: ReviewResult): string {
     .cov{margin:6px 0;padding:6px 8px;border:1px solid #f0d58a;background:#fff8e6;color:#7a5200;font-size:10px}</style></head><body>
     <h1>Проверка документации на риски нарушений и обжалования</h1>
     <div>Общий риск: <span class="badge">${esc(r.overallRisk)}</span></div>
+    ${r.policy ? `<div class="s">Сверено с Положением о закупке «${esc(r.policy.fileName)}»</div>` : ""}
     ${r.summary ? `<p>${esc(r.summary)}</p>` : ""}
     ${coverageNotesHtml(r.coverage, esc)}
     <table><thead><tr><th style="width:28px">№</th><th style="width:34%">Риск</th><th>Обоснование, нормы и как исправить</th></tr></thead><tbody>${rows || "<tr><td colspan=3>Риски не выявлены</td></tr>"}</tbody></table>
@@ -87,6 +91,17 @@ export default function DocReviewPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [record, setRecord] = useState<AnalysisRecord | null>(null);
   const pkg = usePackageUpload("doc_review");
+  // Положение о закупке организации: с ним сверяется документация по 223-ФЗ — до запуска
+  // видно, с каким (или что его нет). Открытая проверка сама говорит, с чем сверена.
+  const [policy, setPolicy] = useState<ProcurementPolicy | null | undefined>(undefined);
+  useEffect(() => {
+    if (analysisId) return;
+    let cancelled = false;
+    fetchProcurementPolicy()
+      .then((p) => { if (!cancelled) setPolicy(p); })
+      .catch(() => { if (!cancelled) setPolicy(undefined); });
+    return () => { cancelled = true; };
+  }, [analysisId]);
 
   // Открытая проверка (/doc-review?id=…) — из «Истории», уведомления или сразу
   // после запуска. Пока идёт обработка — опрашиваем статус каждые 3 с.
@@ -184,6 +199,23 @@ export default function DocReviewPage() {
             ))}
           </div>
 
+          {mode === "223" && policy !== undefined && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-indigo-500/15 bg-indigo-500/5 px-3 py-2 text-xs text-foreground/80">
+              <Scale className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+              {policy?.status === "ready" ? (
+                <span>Документация будет сверена с Положением о закупке «{policy.fileName}» — правил для сверки: {policy.rules.length}.</span>
+              ) : policy?.status === "processing" ? (
+                <span>Положение о закупке «{policy.fileName}» ещё разбирается — эта проверка пройдёт без сверки с ним.</span>
+              ) : (
+                <span>
+                  Положение о закупке {policy?.status === "failed" ? "не разобрано" : "не загружено"} — загрузите его в{" "}
+                  <Link to="/organization" className="text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-300">Профиле организации</Link>,
+                  и проверка покажет противоречия ему с номером пункта и цитатой.
+                </span>
+              )}
+            </div>
+          )}
+
           <label className="mt-5 block text-sm font-medium">Документация закупки (проект)</label>
           <p className="mt-0.5 text-xs text-muted-foreground">Извещение, ТЗ, проект договора, проектная документация. До 50 файлов: каждый до 50 МБ, всего до 1 ГБ.</p>
           <div className="mt-2">
@@ -244,6 +276,9 @@ export default function DocReviewPage() {
                 {result.mode && MODE_LAWS[result.mode] && (
                   <span className="text-[11px] text-muted-foreground">· проверено по: {MODE_LAWS[result.mode]}</span>
                 )}
+                {result.policy && (
+                  <span className="text-[11px] text-muted-foreground">· сверено с Положением о закупке «{result.policy.fileName}»</span>
+                )}
               </div>
               <Button size="sm" variant="outline" className="text-xs" onClick={downloadPdf}>
                 <Printer className="mr-1.5 h-3.5 w-3.5" /> Скачать PDF
@@ -299,6 +334,9 @@ export default function DocReviewPage() {
                                   );
                                 })}
                               </div>
+                              {r.citations.filter((c) => c.kind === "policy" && c.quote).map((c, ci) => (
+                                <p key={ci} className="mt-1.5 text-[11px] italic text-muted-foreground">«{c.quote}»</p>
+                              ))}
                             </div>
                           ) : (
                             <p className="mt-2 text-[11px] text-muted-foreground/70 italic">Без подтверждённого прецедента в базе — проверьте норму самостоятельно.</p>

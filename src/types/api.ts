@@ -364,3 +364,23 @@ export interface PackageFileReport {
   checked: "ai" | "brand-scan" | "none" | "over-limit";
   note?: string;
 }
+
+/** Правило Положения о закупке: пункт и дословная цитата (сервер проверил её по тексту). */
+export interface ProcurementPolicyRule {
+  id: string;
+  topic: string;
+  rule: string;
+  clause: string;
+  quote: string;
+}
+
+/** Положение о закупке организации (223-ФЗ) — свод правил для сверки документации. */
+export interface ProcurementPolicy {
+  id: string;
+  fileName: string;
+  status: "processing" | "ready" | "failed";
+  error: string | null;
+  rules: ProcurementPolicyRule[];
+  coverage: unknown;
+  updatedAt: string;
+}

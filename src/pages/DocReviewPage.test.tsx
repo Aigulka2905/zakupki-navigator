@@ -57,7 +57,7 @@ describe("DocReviewPage", () => {
     expect(await screen.findByText(msg)).toBeInTheDocument();
     expect(screen.getByText("ТЗ.pdf")).toBeInTheDocument();
     expect(reset).not.toHaveBeenCalled();
-    expect(get).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining("/analysis"));
   });
 
   it("временный сбой опроса при processing не останавливает опрос", async () => {
@@ -100,5 +100,36 @@ describe("DocReviewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Проверить документацию/ }));
     expect(await screen.findByText(/Нет связи с сервером/)).toBeInTheDocument();
     expect(screen.queryByText("Network Error")).not.toBeInTheDocument();
+  });
+
+  // Сверка с Положением о закупке (223-ФЗ): противоречие показывается с пунктом Положения и
+  // цитатой; до запуска видно, с каким Положением пойдёт сверка (или что его нет).
+  it("находка по Положению — пункт и цитата Положения, в шапке — с каким Положением сверено", async () => {
+    get.mockResolvedValueOnce({ data: { id: "p1", status: "completed", analysisResult: {
+      overallRisk: "высокий", summary: "Итог", mode: "223",
+      policy: { fileName: "Положение_МУП.pdf", rules: 12, updatedAt: "2026-10-26T09:00:00.000Z" },
+      risks: [{ title: "Обеспечение заявки больше предела Положения", severity: "высокий", topic: "положение", policyRule: "P3",
+        place: "Обеспечение заявки — 5 %", why: "w", fix: "f",
+        citations: [{ kind: "policy", law: "Положение о закупке", article: "п. 8.1", title: "Положение_МУП.pdf", quote: "Размер обеспечения заявки не может превышать двух процентов" }] }],
+    } } });
+    render(<MemoryRouter initialEntries={["/doc-review?id=p1"]}><DocReviewPage /></MemoryRouter>);
+    expect(await screen.findByText("Положение о закупке п. 8.1")).toBeInTheDocument();
+    expect(screen.getByText(/«Размер обеспечения заявки не может превышать двух процентов»/)).toBeInTheDocument();
+    expect(screen.getByText(/сверено с Положением о закупке «Положение_МУП\.pdf»/)).toBeInTheDocument();
+  });
+
+  it("до запуска: Положение разобрано — с ним пойдёт сверка; не загружено — ссылка на профиль", async () => {
+    get.mockImplementation(async (url: string) => (url === "/organization/procurement-policy"
+      ? { data: { policy: { id: "pol", fileName: "Положение_МУП.pdf", status: "ready", error: null, rules: [{ id: "P1" }, { id: "P2" }], coverage: null, updatedAt: "2026-10-26T09:00:00.000Z" } } }
+      : { data: null }));
+    const { unmount } = render(<MemoryRouter initialEntries={["/doc-review"]}><DocReviewPage /></MemoryRouter>);
+    expect(await screen.findByText(/будет сверена с Положением о закупке «Положение_МУП\.pdf»/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /По 44-ФЗ/ }));
+    expect(screen.queryByText(/будет сверена с Положением/)).not.toBeInTheDocument();
+    unmount();
+
+    get.mockImplementation(async () => ({ data: { policy: null } }));
+    render(<MemoryRouter initialEntries={["/doc-review"]}><DocReviewPage /></MemoryRouter>);
+    expect(await screen.findByRole("link", { name: /Профиле организации/ })).toHaveAttribute("href", "/organization");
   });
 });

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Reveal } from "@/components/Reveal";
 import { TeamSection } from "@/components/TeamSection";
+import { ProcurementPolicyCard } from "@/components/ProcurementPolicyCard";
 import apiClient from "@/lib/api-client";
 import type { Organization, OrgDocument, Procurement } from "@/types/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -876,6 +877,13 @@ const OrganizationPage = () => {
 
         </div>
       </form>
+
+      {/* Положение о закупке — вне формы профиля: своя загрузка, своё сохранение. */}
+      {isCustomer && (
+        <div className="mx-auto max-w-4xl px-4 pb-4 md:px-6">
+          <ProcurementPolicyCard />
+        </div>
+      )}
 
       <div className="mx-auto max-w-4xl px-4 pb-8 md:px-6">
         <TeamSection />
