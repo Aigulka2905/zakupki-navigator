@@ -404,6 +404,7 @@ const SSO_ERRORS: Record<string, string> = {
   blocked: "Учётная запись заблокирована. Обратитесь в поддержку.",
   unavailable: "Площадка «Торги РФ» временно недоступна. Повторите попытку позже.",
   failed: "Не удалось войти через площадку «Торги РФ». Повторите попытку или войдите по паролю.",
+  org_type: "Ассистент сейчас доступен только заказчикам.",
 };
 
 function LoginForm() {
@@ -752,12 +753,30 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
 
 type Tab = "login" | "register";
 
+// Открыта ли самостоятельная регистрация (прод «только для заказчиков» — нет: заказчики
+// входят с площадки). Сбой запроса — как раньше, регистрация открыта.
+function useRegistrationEnabled() {
+  const [enabled, setEnabled] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<{ registrationEnabled: boolean }>("/auth/config")
+      .then(({ data }) => { if (!cancelled) setEnabled(data?.registrationEnabled !== false); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return enabled;
+}
+
 const LoginPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // По ссылке-приглашению (?invite=) сразу открываем вкладку регистрации.
-  const [tab, setTab] = useState<Tab>(searchParams.get("invite") ? "register" : "login");
+  const isInvite = !!searchParams.get("invite");
+  const [tabChoice, setTab] = useState<Tab>(isInvite ? "register" : "login");
   const [registered, setRegistered] = useState(false);
+  // Регистрация закрыта — только вход; приглашение в организацию работает всегда.
+  const registrationOpen = useRegistrationEnabled() || isInvite;
+  const tab: Tab = registrationOpen ? tabChoice : "login";
 
   const handleRegisterSuccess = () => {
     setRegistered(true);
@@ -869,7 +888,7 @@ const LoginPage = () => {
             </div>
 
             {/* ── Tabs ───────────────────────────────────────── */}
-            {!registered && (
+            {!registered && registrationOpen && (
               <div
                 className="mb-6 flex rounded-2xl p-1"
                 style={{
@@ -921,7 +940,15 @@ const LoginPage = () => {
                 </div>
               </div>
             ) : tab === "login" ? (
-              <LoginForm />
+              <>
+                <LoginForm />
+                {!registrationOpen && (
+                  <p className="mt-4 text-center text-xs leading-relaxed text-slate-500">
+                    Заказчики входят из личного кабинета «Торги РФ» — по ссылке на ИИ-ассистента.
+                    Отдельная регистрация не нужна.
+                  </p>
+                )}
+              </>
             ) : (
               <div className="max-h-[55vh] overflow-y-auto pr-1 custom-scroll">
                 <RegisterForm onSuccess={handleRegisterSuccess} />

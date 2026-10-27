@@ -45,6 +45,15 @@ apiClient.interceptors.response.use(
     const url = original.url ?? '';
     const isAuthEndpoint = /\/auth\/(login|refresh|register)/.test(url);
 
+    // Прод «только для заказчиков»: организация поставщика не допущена — сессия бесполезна,
+    // выходим на страницу входа с объяснением (а не оставляем пустые страницы с ошибками).
+    const code = (error.response?.data as { code?: string } | undefined)?.code;
+    if (error.response?.status === 403 && code === 'ORG_TYPE_NOT_ALLOWED' && !isAuthEndpoint) {
+      tokenStorage.clearTokens();
+      window.location.href = '/login?sso_error=org_type';
+      return Promise.reject(error);
+    }
+
     // Пропускаем не-401 ошибки, повторные запросы и auth-эндпоинты
     if (error.response?.status !== 401 || original._retry || isAuthEndpoint) {
       return Promise.reject(error);
