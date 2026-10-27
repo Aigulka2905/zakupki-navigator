@@ -34,120 +34,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-
-// ── Types ─────────────────────────────────────────────────────
-
-type Audience = "customer" | "participant";
-
-interface Topic {
-  id: string;
-  icon: React.ElementType;
-  label: string;
-  badge?: string;
-  /** Кому показывать тему. Не задано → обеим ролям. */
-  audience?: Audience;
-  sections: Section[];
-}
-
-interface Section {
-  title: string;
-  content: React.ReactNode;
-}
-
-// ── Callout components ────────────────────────────────────────
-
-function Tip({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 rounded-xl border border-primary/20 bg-primary-soft/60 p-4 text-sm">
-      <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-      <span className="text-foreground/80">{children}</span>
-    </div>
-  );
-}
-
-function Warning({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 rounded-xl border border-warning/30 bg-warning-soft/70 p-4 text-sm">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
-      <span className="text-foreground/80">{children}</span>
-    </div>
-  );
-}
-
-function Note({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 rounded-xl border border-border bg-muted/50 p-4 text-sm">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="text-muted-foreground">{children}</span>
-    </div>
-  );
-}
-
-function Success({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 rounded-xl border border-success/30 bg-success/5 p-4 text-sm">
-      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-      <span className="text-foreground/80">{children}</span>
-    </div>
-  );
-}
-
-// ── Numbered step ─────────────────────────────────────────────
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex gap-4">
-      <div className="flex flex-col items-center">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-          {n}
-        </div>
-        <div className="mt-1 w-px flex-1 bg-border" />
-      </div>
-      <div className="pb-6 pt-0.5 min-w-0 flex-1">
-        <p className="mb-1.5 text-sm font-semibold text-foreground">{title}</p>
-        <div className="space-y-2 text-sm text-muted-foreground">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function Steps({ children }: { children: React.ReactNode }) {
-  return <div className="mt-3">{children}</div>;
-}
-
-// ── Key shortcut ──────────────────────────────────────────────
-
-function Key({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground">
-      {children}
-    </kbd>
-  );
-}
-
-// ── Feature grid ──────────────────────────────────────────────
-
-function FeatureGrid({ items }: { items: { icon: React.ElementType; title: string; desc: string }[] }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {items.map((item) => (
-        <div key={item.title} className="flex gap-3 rounded-xl border border-border bg-muted/30 p-4">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft">
-            <item.icon className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-medium">{item.title}</p>
-            <p className="text-xs text-muted-foreground">{item.desc}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { Tip, Warning, Note, Success, Step, Steps, Key, FeatureGrid, type Audience, type Topic } from "./instructions/blocks";
+import { CUSTOMER_TOPICS } from "./instructions/customerTopics";
+import { CHAT_TOPIC, NMCK_TOPIC, SECURITY_TOPIC } from "./instructions/sharedTopics";
 
 // ── Topic content ─────────────────────────────────────────────
 
-const TOPICS: Topic[] = [
+// Разделы поставщика (у заказчика — свои, instructions/customerTopics.tsx).
+const PARTICIPANT_TOPICS: Topic[] = [
   {
     id: "start",
     icon: PlayCircle,
@@ -229,102 +123,7 @@ const TOPICS: Topic[] = [
     ],
   },
 
-  {
-    id: "chat",
-    icon: MessageSquare,
-    label: "Чат с ИИ-ассистентом",
-    sections: [
-      {
-        title: "Как работает ассистент",
-        content: (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              ИИ-ассистент специализируется на законодательстве о госзакупках (223-ФЗ, 44-ФЗ) и умеет работать в трёх режимах:
-            </p>
-            <FeatureGrid items={[
-              { icon: MessageSquare, title: "Общий режим", desc: "Вопросы по 223-ФЗ, 44-ФЗ, расчёт сроков, сравнение норм" },
-              { icon: Briefcase, title: "Режим закупки", desc: "Анализ конкретной закупки с данными из ЭТП" },
-              { icon: BookOpen, title: "Режим документа", desc: "Ответы строго по содержимому загруженного документа" },
-            ]} />
-            <Tip>
-              Для точных ответов задавайте конкретные вопросы: «Каков минимальный срок публикации извещения по 223-ФЗ для товаров?» лучше, чем «расскажи про сроки».
-            </Tip>
-          </div>
-        ),
-      },
-      {
-        title: "Анализ документа из базы знаний",
-        content: (
-          <div className="space-y-4 text-sm">
-            <p className="text-muted-foreground">
-              Вы можете попросить ассистента ответить на вопросы по конкретному документу из базы знаний:
-            </p>
-            <Steps>
-              <Step n={1} title="Откройте Базу знаний">
-                Перейдите в раздел <strong>«База знаний»</strong> через боковое меню.
-              </Step>
-              <Step n={2} title="Найдите нужный документ">
-                Используйте поиск или фильтры по типу документа.
-              </Step>
-              <Step n={3} title='Нажмите "Спросить ИИ"'>
-                Кнопка есть как в карточке документа, так и в панели просмотра.
-              </Step>
-              <Step n={4} title="Задавайте вопросы по документу">
-                ИИ будет отвечать <strong>строго на основе текста этого документа</strong> — без смешения с другими данными.
-              </Step>
-            </Steps>
-            <Success>
-              Это особенно полезно для анализа технических заданий, проверки закупочной документации и изучения судебной практики.
-            </Success>
-          </div>
-        ),
-      },
-      {
-        title: "Примеры эффективных запросов",
-        content: (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              {[
-                { tag: "Сроки", q: "Какой минимальный срок подачи заявок для конкурса с НМЦК более 10 млн руб. по 223-ФЗ?" },
-                { tag: "Проверка", q: "Есть ли в этом документе нарушения требований к обеспечению заявки?" },
-                { tag: "Анализ", q: "Какие требования к участникам установлены в данной закупочной документации?" },
-                { tag: "Расчёт", q: "Рассчитай сроки проведения запроса котировок по 223-ФЗ от даты публикации 15 мая" },
-                { tag: "Сравнение", q: "Чем отличаются требования к обеспечению контракта в 44-ФЗ и 223-ФЗ?" },
-              ].map((item) => (
-                <div key={item.tag} className="flex gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
-                  <Badge variant="outline" className="mt-0.5 h-5 shrink-0 text-[10px]">{item.tag}</Badge>
-                  <p className="text-sm text-foreground/80">«{item.q}»</p>
-                </div>
-              ))}
-            </div>
-            <Tip>
-              Нажмите <Key>Enter</Key> для отправки, <Key>Shift</Key>+<Key>Enter</Key> — для переноса строки в вопросе.
-            </Tip>
-          </div>
-        ),
-      },
-      {
-        title: "История диалогов",
-        content: (
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>В левой панели чата сохраняются все предыдущие диалоги.</p>
-            <ul className="space-y-2 list-none">
-              {[
-                "Общий чат — вопросы по законодательству без привязки к закупке",
-                "Диалоги по закупкам — появляются при открытии чата из карточки закупки",
-                "Диалоги по документам — не сохраняются в историю (каждый раз свежий контекст)",
-              ].map((item, i) => (
-                <li key={i} className="flex gap-2">
-                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ),
-      },
-    ],
-  },
+  CHAT_TOPIC,
 
   {
     id: "procurements",
@@ -460,65 +259,6 @@ const TOPICS: Topic[] = [
   },
 
   {
-    id: "analysis",
-    icon: FileSearch,
-    label: "Анализ документов",
-    sections: [
-      {
-        title: "Как работает анализ",
-        content: (
-          <div className="space-y-4 text-sm">
-            <p className="text-muted-foreground">
-              Раздел «Анализ документа» позволяет загрузить любой файл закупочной документации
-              и получить автоматическую проверку на соответствие 223-ФЗ и 44-ФЗ.
-            </p>
-            <Steps>
-              <Step n={1} title="Загрузите документ">
-                Перетащите файл в зону загрузки или нажмите кнопку выбора. Форматы: PDF, DOCX, XLSX, TXT.
-              </Step>
-              <Step n={2} title="Дождитесь обработки">
-                Анализ выполняется в фоне (обычно 30–90 секунд в зависимости от размера файла).
-              </Step>
-              <Step n={3} title="Изучите результат">
-                Система выведет список найденных нарушений с ссылками на статьи законов и рекомендациями по устранению.
-              </Step>
-            </Steps>
-            <Tip>
-              Загружайте финальные версии документов — черновики без дат и подписей могут давать ложные предупреждения.
-            </Tip>
-          </div>
-        ),
-      },
-      {
-        title: "Что проверяется",
-        content: (
-          <div className="space-y-3">
-            <div className="space-y-2 text-sm">
-              {[
-                "Сроки публикации извещения и документации",
-                "Требования к обеспечению заявки и контракта",
-                "Критерии оценки заявок (222-ФЗ, ч. 6 ст. 3)",
-                "Преимущества для субъектов МСП",
-                "Порядок подачи и отзыва заявок",
-                "Требования к участникам (РНП, лицензии)",
-                "Условия расторжения и изменения контракта",
-              ].map((item) => (
-                <div key={item} className="flex gap-2 rounded-lg bg-muted/30 px-3 py-2">
-                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                  <span className="text-muted-foreground">{item}</span>
-                </div>
-              ))}
-            </div>
-            <Note>
-              Анализ носит информационный характер. Результаты рекомендуется проверять с юристом перед подачей жалобы в ФАС.
-            </Note>
-          </div>
-        ),
-      },
-    ],
-  },
-
-  {
     id: "bid-evaluation",
     icon: ClipboardCheck,
     label: "Оценка заявок",
@@ -579,61 +319,7 @@ const TOPICS: Topic[] = [
     ],
   },
 
-  {
-    id: "nmck",
-    icon: Calculator,
-    label: "Обоснование НМЦ",
-    badge: "NEW",
-    sections: [
-      {
-        title: "Что делает",
-        content: (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Расчёт начальной (максимальной) цены контракта методом сопоставимых рыночных цен
-              (анализ рынка). Вы задаёте позиции и ценовые источники, система считает НМЦК,
-              коэффициент вариации и формирует готовый текст обоснования.
-            </p>
-            <FeatureGrid items={[
-              { icon: Calculator, title: "Автоматический расчёт", desc: "Средняя цена, НМЦК, коэффициент вариации (CV)" },
-              { icon: Briefcase, title: "Цены из ЕИС", desc: "Поиск прошедших контрактов реестра по наименованию — цены победивших поставщиков" },
-              { icon: Printer, title: "Готовое обоснование", desc: "Текст обоснования + экспорт" },
-            ]} />
-          </div>
-        ),
-      },
-      {
-        title: "Как посчитать НМЦК",
-        content: (
-          <Steps>
-            <Step n={1} title="Добавьте позиции закупки">
-              Наименование, единица измерения, количество.
-            </Step>
-            <Step n={2} title="Добавьте ценовые источники">
-              Введите цены вручную (из коммерческих предложений) или нажмите «Найти в ЕИС» —
-              укажите наименование позиции, система покажет прошедшие контракты с этим товаром
-              и ценами победивших поставщиков; отметьте нужные.
-            </Step>
-            <Step n={3} title="Получите расчёт">
-              Система посчитает среднюю цену, НМЦК и коэффициент вариации по каждой позиции.
-            </Step>
-            <Step n={4} title="Сформируйте обоснование и сохраните">
-              Кнопка генерации текста обоснования; расчёт сохраняется в истории.
-            </Step>
-          </Steps>
-        ),
-      },
-      {
-        title: "На что обратить внимание",
-        content: (
-          <div className="space-y-3">
-            <Note>Коэффициент вариации (CV) выше 33% означает большой разброс цен — источники стоит перепроверить.</Note>
-            <Tip>Чем больше сопоставимых ценовых источников (рекомендуется не менее трёх), тем обоснованнее НМЦК.</Tip>
-          </div>
-        ),
-      },
-    ],
-  },
+  NMCK_TOPIC,
 
   {
     id: "check-supplier",
@@ -690,7 +376,6 @@ const TOPICS: Topic[] = [
     id: "billing",
     icon: CreditCard,
     label: "Биллинг и оплата",
-    audience: "participant",
     sections: [
       {
         title: "Модели оплаты",
@@ -816,60 +501,7 @@ const TOPICS: Topic[] = [
     ],
   },
 
-  {
-    id: "security",
-    icon: Lock,
-    label: "Безопасность",
-    sections: [
-      {
-        title: "Хранение данных",
-        content: (
-          <div className="space-y-4 text-sm text-muted-foreground">
-            <div className="space-y-2">
-              {[
-                "Все данные хранятся на серверах в Российской Федерации",
-                "Пароли хранятся в зашифрованном виде (bcrypt), исходный пароль нигде не сохраняется",
-                "Файлы документов хранятся изолированно от других организаций",
-                "Передача данных — только по HTTPS",
-              ].map((item, i) => (
-                <div key={i} className="flex gap-2">
-                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        ),
-      },
-      {
-        title: "Токены доступа",
-        content: (
-          <div className="space-y-4 text-sm">
-            <p className="text-muted-foreground">
-              Система использует два типа токенов для безопасного доступа:
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                { title: "Access Token", ttl: "15 минут", desc: "Короткоживущий токен для API-запросов. Обновляется автоматически." },
-                { title: "Refresh Token", ttl: "7 дней", desc: "Долгоживущий токен для обновления доступа. Хранится в базе данных." },
-              ].map((t) => (
-                <div key={t.title} className="rounded-xl border border-border p-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium">{t.title}</p>
-                    <span className="text-[10px] rounded-full bg-muted px-2 py-0.5 font-mono">{t.ttl}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t.desc}</p>
-                </div>
-              ))}
-            </div>
-            <Note>
-              При смене пароля все активные сессии завершаются — вам потребуется войти заново на всех устройствах.
-            </Note>
-          </div>
-        ),
-      },
-    ],
-  },
+  SECURITY_TOPIC,
 
   {
     id: "faq",
@@ -1004,10 +636,8 @@ const InstructionsPage = () => {
     }
   }, [currentUser, roleTouched]);
 
-  // Темы для выбранной роли (без audience → показываем обеим).
-  // У заказчика раздел называется «Анализ заявок» (в меню — так же).
-  const byAudience = TOPICS.filter((t) => !t.audience || t.audience === role)
-    .map((t) => (role === "customer" && t.id === "bid-evaluation" ? { ...t, label: "Анализ заявок" } : t));
+  // У заказчика и поставщика свои наборы разделов — каждый в порядке своего меню.
+  const byAudience = role === "customer" ? CUSTOMER_TOPICS : PARTICIPANT_TOPICS;
 
   const filteredTopics = search.trim()
     ? byAudience.filter(
@@ -1040,7 +670,7 @@ const InstructionsPage = () => {
       <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-6xl gap-0 overflow-hidden rounded-xl border border-border shadow-card px-4 md:px-6">
 
         {/* ── Left sidebar ─────────────────────────────────── */}
-        <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-muted/20">
+        <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/20">
           {/* Role switch */}
           <div className="border-b border-border p-3">
             <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-0.5">
@@ -1075,7 +705,7 @@ const InstructionsPage = () => {
           </div>
 
           {/* Topics */}
-          <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+          <nav aria-label="Разделы инструкции" className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {filteredTopics.length === 0 && (
               <p className="px-3 py-8 text-center text-xs text-muted-foreground">Ничего не найдено</p>
             )}
@@ -1120,7 +750,7 @@ const InstructionsPage = () => {
               <div>
                 <h2 className="text-base font-semibold">{activeTopic.label}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {activeTopic.sections.length} {activeTopic.sections.length === 1 ? "раздел" : "раздела"}
+                  {activeTopic.sections.length} {activeTopic.sections.length === 1 ? "раздел" : activeTopic.sections.length < 5 ? "раздела" : "разделов"}
                 </p>
               </div>
             </div>
