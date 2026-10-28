@@ -20,6 +20,7 @@ import {
 import {
   Users,
   Settings2,
+  KeyRound,
   CheckCircle2,
   XCircle,
   Bot,
@@ -88,6 +89,8 @@ import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
 import { KomusPricelistCard } from "@/components/admin/KomusPricelistCard";
+import { SsoProvidersCard } from "@/components/admin/SsoProvidersCard";
+import { AccessSettingsCard } from "@/components/admin/AccessSettingsCard";
 import { useState, useEffect, useRef } from "react";
 
 // ── Role badge ────────────────────────────────────────────────
@@ -1712,6 +1715,10 @@ export default function AdminPage() {
               <Settings2 className="h-3.5 w-3.5" />
               Параметры системы
             </TabsTrigger>
+            <TabsTrigger value="sso" className="gap-1.5 text-xs">
+              <KeyRound className="h-3.5 w-3.5" />
+              Доступ и вход
+            </TabsTrigger>
             <TabsTrigger value="ai" className="gap-1.5 text-xs">
               <BarChart2 className="h-3.5 w-3.5" />
               AI / Расходы
@@ -1740,6 +1747,11 @@ export default function AdminPage() {
 
           <TabsContent value="params" className="mt-4">
             <ParametersTab />
+          </TabsContent>
+
+          <TabsContent value="sso" className="mt-4 space-y-4">
+            <AccessSettingsCard />
+            <SsoProvidersCard />
           </TabsContent>
 
           <TabsContent value="ai" className="mt-4">

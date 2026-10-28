@@ -8,7 +8,7 @@ import { tokenStorage } from "@/lib/auth";
 import { queryClient } from "@/lib/query-client";
 import type { AuthTokens } from "@/types/api";
 
-// Вход через ЭТП «Торги РФ»: backend уже проверил пользователя на площадке и поставил
+// Вход через ЭТП (любая площадка из админки): backend уже проверил пользователя на площадке и поставил
 // httpOnly refresh-cookie, access-токен в адресе намеренно не передаётся. Получаем его
 // обычным /auth/refresh — голым axios, без интерсептора apiClient (тот на 401 сам
 // уводит на /login без пометки sso_error).
@@ -39,7 +39,7 @@ const SsoCompletePage = () => {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <ShieldCheck className="h-7 w-7" />
           </div>
-          <h1 className="text-xl font-semibold">Вход через «Торги РФ»</h1>
+          <h1 className="text-xl font-semibold">Вход через площадку</h1>
         </div>
 
         <Card className="shadow-card">

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-// Прод «только для заказчиков»: регистрация закрыта (вход — из кабинета «Торги РФ»),
+// Прод «только для заказчиков»: регистрация закрыта (вход — из кабинета площадки),
 // приглашение в организацию работает; отказ входа поставщику объяснён.
 const get = vi.fn();
 vi.mock("@/lib/api-client", () => ({ default: { get: (url: string) => get(url), post: vi.fn() } }));
@@ -23,7 +23,7 @@ beforeEach(() => {
 describe("LoginPage: только для заказчиков", () => {
   it("регистрация закрыта — вкладки нет, подсказка о входе с площадки", async () => {
     renderAt("/login");
-    expect(await screen.findByText(/Заказчики входят из личного кабинета «Торги РФ»/)).toBeInTheDocument();
+    expect(await screen.findByText(/Входите из личного кабинета своей электронной площадки/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Регистрация" })).not.toBeInTheDocument();
   });
 
