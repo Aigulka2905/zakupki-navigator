@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   useCreateSsoProvider, useDeleteSsoProvider, useSsoProviders, useUpdateSsoProvider,
-  type SsoProvider, type SsoProviderInput,
+  type SsoProvider, type SsoProviderInput, type SsoProvidersData,
 } from "@/hooks/useAdmin";
 
 const errorText = (e: unknown, fallback: string) =>
@@ -58,19 +58,29 @@ interface FormState {
   clientId: string;
   clientSecret: string;
   enabled: boolean;
+  apiUrl: string;        // пусто — общий адрес (defaults)
+  frontendUrl: string;
 }
-const EMPTY: FormState = { code: "", name: "", baseUrl: "https://", clientId: "zakupki-ai", clientSecret: "", enabled: false };
+const EMPTY: FormState = {
+  code: "", name: "", baseUrl: "https://", clientId: "zakupki-ai", clientSecret: "", enabled: false, apiUrl: "", frontendUrl: "",
+};
+const trimSlash = (u: string) => u.trim().replace(/\/+$/, "");
 
 /**
  * Добавление и правка площадки. Секрет — только ввод: пустое поле при правке оставляет прежний.
  * Монтируется на время открытия — форма каждый раз заполняется заново.
  */
-function ProviderDialog({ provider, onClose }: { provider: SsoProvider | null; onClose: () => void }) {
+function ProviderDialog({ provider, defaults, onClose }: {
+  provider: SsoProvider | null; defaults: SsoProvidersData["defaults"] | undefined; onClose: () => void;
+}) {
   const create = useCreateSsoProvider();
   const update = useUpdateSsoProvider();
   const editing = provider !== null;
   const [form, setForm] = useState<FormState>(() => (provider
-    ? { code: provider.code, name: provider.name, baseUrl: provider.baseUrl, clientId: provider.clientId, clientSecret: "", enabled: provider.enabled }
+    ? {
+      code: provider.code, name: provider.name, baseUrl: provider.baseUrl, clientId: provider.clientId, clientSecret: "",
+      enabled: provider.enabled, apiUrl: provider.apiUrl ?? "", frontendUrl: provider.frontendUrl ?? "",
+    }
     : EMPTY));
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -81,10 +91,16 @@ function ProviderDialog({ provider, onClose }: { provider: SsoProvider | null; o
   const canSave = form.name.trim() !== "" && form.baseUrl.trim() !== "" && form.clientId.trim() !== ""
     && (editing || CODE_RE.test(form.code));
   const pending = create.isPending || update.isPending;
+  // Адрес возврата, который нужно зарегистрировать у клиента на площадке, — сразу по введённому.
+  const apiBase = trimSlash(form.apiUrl) || defaults?.apiUrl || "";
+  const callbackPreview = apiBase && form.code ? `${apiBase}/api/auth/sso/${form.code}/callback` : null;
 
   const save = () => {
     const body: SsoProviderInput = {
       name: form.name, baseUrl: form.baseUrl, clientId: form.clientId, enabled: form.enabled,
+      // Пустое поле — null: вернуться к общему адресу ZakupkiAI.
+      apiUrl: form.apiUrl.trim() || null,
+      frontendUrl: form.frontendUrl.trim() || null,
       ...(form.clientSecret ? { clientSecret: form.clientSecret } : {}),
     };
     const done = {
@@ -100,7 +116,7 @@ function ProviderDialog({ provider, onClose }: { provider: SsoProvider | null; o
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? `Площадка «${provider.name}»` : "Новая площадка"}</DialogTitle>
           <DialogDescription>
@@ -144,6 +160,32 @@ function ProviderDialog({ provider, onClose }: { provider: SsoProvider | null; o
             />
             <p className="text-[11px] text-muted-foreground">Хранится зашифрованным; посмотреть его потом нельзя — только заменить.</p>
           </div>
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <div>
+              <p className="text-xs font-medium">Адреса ZakupkiAI для этой площадки</p>
+              <p className="text-[11px] text-muted-foreground">
+                Если площадка работает с ZakupkiAI на своём домене. Пусто — общие адреса сервера.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sso-api">Адрес API</Label>
+              <Input id="sso-api" value={form.apiUrl} placeholder={defaults?.apiUrl ?? "https://ai-api.soderiz.ru"}
+                onChange={(e) => set("apiUrl", e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sso-front">Адрес сайта</Label>
+              <Input id="sso-front" value={form.frontendUrl} placeholder={defaults?.frontendUrl ?? "https://ai.soderiz.ru"}
+                onChange={(e) => set("frontendUrl", e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">
+                Сюда пользователь попадает после входа — домен должен вести на ZakupkiAI.
+              </p>
+            </div>
+            {callbackPreview && (
+              <p className="break-all text-[11px] text-muted-foreground">
+                Адрес возврата для клиента на площадке: <code className="text-foreground">{callbackPreview}</code>
+              </p>
+            )}
+          </div>
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <div>
               <Label htmlFor="sso-enabled">Вход включён</Label>
@@ -170,7 +212,8 @@ function ProviderDialog({ provider, onClose }: { provider: SsoProvider | null; o
  * Адреса для площадки (возврат и пункт меню) — готовыми, с кнопкой «скопировать».
  */
 export function SsoProvidersCard() {
-  const { data: providers, isLoading, isError } = useSsoProviders();
+  const { data, isLoading, isError } = useSsoProviders();
+  const providers = data?.providers;
   const update = useUpdateSsoProvider();
   const remove = useDeleteSsoProvider();
   // undefined — диалог закрыт, null — новая площадка.
@@ -181,6 +224,9 @@ export function SsoProvidersCard() {
     onSuccess: () => toast.success(enabled ? `Вход с «${p.name}» включён` : `Вход с «${p.name}» выключен`),
     onError: (e: unknown) => toast.error(errorText(e, "Не удалось изменить площадку")),
   });
+
+  // Через площадку входили — удалить нельзя (пользователи потеряли бы вход), только выключить.
+  const linked = (toDelete?.usersCount ?? 0) > 0;
 
   const confirmDelete = () => {
     if (!toDelete) return;
@@ -232,10 +278,10 @@ export function SsoProvidersCard() {
                   onClick={() => setEditing(p)}>
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
+                {/* Кнопка активна всегда: у неактивной кнопки подсказка не показывается (pointer-events: none),
+                    и было непонятно, почему удалить нельзя. Объяснение — в окне. */}
                 <Button
                   size="icon" variant="ghost" className="h-7 w-7" aria-label={`Удалить «${p.name}»`}
-                  disabled={p.usersCount > 0}
-                  title={p.usersCount > 0 ? "Через площадку уже входили — её можно только выключить" : undefined}
                   onClick={() => setToDelete(p)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -249,6 +295,11 @@ export function SsoProvidersCard() {
                 ? `входили: ${p.usersCount.toLocaleString("ru-RU")}${p.lastLoginAt ? `, последний вход ${dateTime(p.lastLoginAt)}` : ""}`
                 : "ещё никто не входил"}
             </p>
+            {p.frontendUrl && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Сайт ZakupkiAI для этой площадки: <span className="font-mono">{p.frontendUrl}</span>
+              </p>
+            )}
             <div className="mt-2 space-y-1">
               <CopyField label="Адрес возврата" value={p.callbackUrl} />
               <CopyField label="Пункт меню" value={p.startUrl} />
@@ -263,20 +314,29 @@ export function SsoProvidersCard() {
       </p>
 
       {editing !== undefined && (
-        <ProviderDialog key={editing?.code ?? "new"} provider={editing} onClose={() => setEditing(undefined)} />
+        <ProviderDialog key={editing?.code ?? "new"} provider={editing} defaults={data?.defaults} onClose={() => setEditing(undefined)} />
       )}
 
       <AlertDialog open={toDelete !== null} onOpenChange={(open) => { if (!open) setToDelete(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить площадку «{toDelete?.name}»?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {linked ? `Площадку «${toDelete?.name}» удалить нельзя` : `Удалить площадку «${toDelete?.name}»?`}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Вход с этой площадки перестанет работать. Через неё ещё никто не входил, пользователи не пострадают.
+              {linked
+                ? `Через неё уже входили (${toDelete?.usersCount.toLocaleString("ru-RU")}): после удаления эти пользователи `
+                  + "потеряли бы вход. Площадку можно выключить — вход с неё прекратится, пользователи сохранятся."
+                : "Вход с этой площадки перестанет работать. Через неё ещё никто не входил, пользователи не пострадают."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Удалить</AlertDialogAction>
+            <AlertDialogCancel>{linked ? "Закрыть" : "Отмена"}</AlertDialogCancel>
+            {linked
+              ? toDelete?.enabled && (
+                <AlertDialogAction onClick={() => { toggle(toDelete, false); setToDelete(null); }}>Выключить вход</AlertDialogAction>
+              )
+              : <AlertDialogAction onClick={confirmDelete}>Удалить</AlertDialogAction>}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -17,7 +17,7 @@ const mutation = (mutate: unknown) => ({ mutate, isPending: false }) as never;
 
 const RF: SsoProvider = {
   code: "rftorgi", name: "Торги РФ", baseUrl: "https://lk.rftorgi.ru", clientId: "zakupki-ai",
-  hasClientSecret: true, enabled: true,
+  hasClientSecret: true, enabled: true, apiUrl: null, frontendUrl: null,
   callbackUrl: "https://ai.soderiz.ru/api/auth/sso/rftorgi/callback",
   startUrl: "https://ai.soderiz.ru/api/auth/sso/rftorgi/start?profile_id=<id профиля>",
   usersCount: 12, lastLoginAt: "2026-10-27T09:15:00Z", createdAt: "2026-10-21T00:00:00Z", updatedAt: "2026-10-21T00:00:00Z",
@@ -29,8 +29,9 @@ const AF: SsoProvider = {
   usersCount: 0, lastLoginAt: null,
 };
 
-const withProviders = (data: SsoProvider[]) =>
-  vi.mocked(useSsoProviders).mockReturnValue({ data, isLoading: false, isError: false } as never);
+const DEFAULTS = { apiUrl: "https://ai-api.soderiz.ru", frontendUrl: "https://ai.soderiz.ru" };
+const withProviders = (providers: SsoProvider[]) =>
+  vi.mocked(useSsoProviders).mockReturnValue({ data: { providers, defaults: DEFAULTS }, isLoading: false, isError: false } as never);
 
 beforeEach(() => {
   createMutate.mockReset();
@@ -63,11 +64,23 @@ describe("SsoProvidersCard", () => {
     expect(updateMutate).toHaveBeenCalledWith({ code: "rftorgi", enabled: false }, expect.any(Object));
   });
 
-  it("через площадку входили — удалить нельзя; не входили — удаление после подтверждения", () => {
+  it("через площадку входили — окно объясняет почему и предлагает выключить; удаления нет", () => {
     withProviders([RF, AF]);
     render(<SsoProvidersCard />);
 
-    expect(screen.getByRole("button", { name: "Удалить «Торги РФ»" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Удалить «Торги РФ»" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("Площадку «Торги РФ» удалить нельзя")).toBeInTheDocument();
+    expect(within(dialog).getByText(/уже входили \(12\)/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Удалить" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Выключить вход" }));
+    expect(updateMutate).toHaveBeenCalledWith({ code: "rftorgi", enabled: false }, expect.any(Object));
+    expect(deleteMutate).not.toHaveBeenCalled();
+  });
+
+  it("никто не входил — удаление после подтверждения", () => {
+    withProviders([RF, AF]);
+    render(<SsoProvidersCard />);
     fireEvent.click(screen.getByRole("button", { name: "Удалить «АФ-Торги»" }));
     expect(deleteMutate).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить" }));
@@ -90,7 +103,7 @@ describe("SsoProvidersCard", () => {
     fireEvent.change(screen.getByLabelText("Секрет клиента"), { target: { value: "s3cret" } });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     expect(createMutate).toHaveBeenCalledWith(
-      { code: "aftorgi", name: "АФ-Торги", baseUrl: "https://lk.af-torgi.ru", clientId: "zakupki-ai", clientSecret: "s3cret", enabled: false },
+      { code: "aftorgi", name: "АФ-Торги", baseUrl: "https://lk.af-torgi.ru", clientId: "zakupki-ai", clientSecret: "s3cret", enabled: false, apiUrl: null, frontendUrl: null },
       expect.any(Object),
     );
   });
@@ -107,7 +120,32 @@ describe("SsoProvidersCard", () => {
     fireEvent.change(screen.getByLabelText("Название"), { target: { value: "Торги РФ (прод)" } });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     const [body] = updateMutate.mock.calls[0];
-    expect(body).toEqual({ code: "rftorgi", name: "Торги РФ (прод)", baseUrl: RF.baseUrl, clientId: "zakupki-ai", enabled: true });
+    expect(body).toEqual({ code: "rftorgi", name: "Торги РФ (прод)", baseUrl: RF.baseUrl, clientId: "zakupki-ai", enabled: true, apiUrl: null, frontendUrl: null });
     expect(body).not.toHaveProperty("clientSecret");
+  });
+
+  it("свои адреса ZakupkiAI: подсказка с общими, адрес возврата — по введённому, уходят в запрос", () => {
+    withProviders([]);
+    render(<SsoProvidersCard />);
+    fireEvent.click(screen.getByRole("button", { name: /Добавить площадку/ }));
+
+    expect(screen.getByLabelText("Адрес API")).toHaveAttribute("placeholder", DEFAULTS.apiUrl);
+    fireEvent.change(screen.getByLabelText("Код"), { target: { value: "nsp" } });
+    expect(screen.getByText("https://ai-api.soderiz.ru/api/auth/sso/nsp/callback")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Адрес API"), { target: { value: "https://ai-api.other.ru/" } });
+    fireEvent.change(screen.getByLabelText("Адрес сайта"), { target: { value: "https://ai.other.ru" } });
+    expect(screen.getByText("https://ai-api.other.ru/api/auth/sso/nsp/callback")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Название"), { target: { value: "НСП" } });
+    fireEvent.change(screen.getByLabelText("Адрес площадки"), { target: { value: "https://lk.nsptorgi.ru" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    expect(createMutate.mock.calls[0][0]).toMatchObject({ apiUrl: "https://ai-api.other.ru/", frontendUrl: "https://ai.other.ru" });
+  });
+
+  it("у площадки свой сайт — видно в списке", () => {
+    withProviders([{ ...RF, frontendUrl: "https://ai.other.ru" }]);
+    render(<SsoProvidersCard />);
+    expect(screen.getByText("https://ai.other.ru")).toBeInTheDocument();
   });
 });
