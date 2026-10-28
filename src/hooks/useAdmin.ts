@@ -519,6 +519,9 @@ export interface SsoProvider {
   clientId: string;
   hasClientSecret: boolean;
   enabled: boolean;
+  // Свои адреса ZakupkiAI для площадки; null — общие (SsoProvidersData.defaults).
+  apiUrl: string | null;
+  frontendUrl: string | null;
   callbackUrl: string;
   startUrl: string;
   usersCount: number;
@@ -532,12 +535,18 @@ export interface SsoProviderInput {
   clientId?: string;
   clientSecret?: string;
   enabled?: boolean;
+  apiUrl?: string | null;       // null — вернуть общий адрес
+  frontendUrl?: string | null;
+}
+export interface SsoProvidersData {
+  providers: SsoProvider[];
+  defaults: { apiUrl: string; frontendUrl: string };   // общие адреса ZakupkiAI (API_URL, FRONTEND_URL)
 }
 
 export function useSsoProviders() {
   return useQuery({
     queryKey: ["admin-sso-providers"],
-    queryFn: () => apiClient.get<{ providers: SsoProvider[] }>("/admin/sso-providers").then((r) => r.data.providers),
+    queryFn: () => apiClient.get<SsoProvidersData>("/admin/sso-providers").then((r) => r.data),
     staleTime: 30_000,
   });
 }
