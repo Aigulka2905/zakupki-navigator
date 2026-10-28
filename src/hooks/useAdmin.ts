@@ -509,3 +509,85 @@ export function useAdminLogs(params: {
     staleTime: 0,
   });
 }
+
+// ── Вход с площадок (SSO, движок 223-platform) ────────────────
+// Секрет клиента сервер только принимает: в ответах — признак hasClientSecret.
+export interface SsoProvider {
+  code: string;
+  name: string;
+  baseUrl: string;
+  clientId: string;
+  hasClientSecret: boolean;
+  enabled: boolean;
+  callbackUrl: string;
+  startUrl: string;
+  usersCount: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SsoProviderInput {
+  name?: string;
+  baseUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  enabled?: boolean;
+}
+
+export function useSsoProviders() {
+  return useQuery({
+    queryKey: ["admin-sso-providers"],
+    queryFn: () => apiClient.get<{ providers: SsoProvider[] }>("/admin/sso-providers").then((r) => r.data.providers),
+    staleTime: 30_000,
+  });
+}
+export function useCreateSsoProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SsoProviderInput & { code: string }) =>
+      apiClient.post<{ provider: SsoProvider }>("/admin/sso-providers", input).then((r) => r.data.provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sso-providers"] }),
+  });
+}
+export function useUpdateSsoProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, ...patch }: SsoProviderInput & { code: string }) =>
+      apiClient.patch<{ provider: SsoProvider }>(`/admin/sso-providers/${code}`, patch).then((r) => r.data.provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sso-providers"] }),
+  });
+}
+export function useDeleteSsoProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => apiClient.delete(`/admin/sso-providers/${code}`).then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-sso-providers"] }),
+  });
+}
+
+// ── Кто пользуется сервисом: типы организаций и самостоятельная регистрация ──
+export type AccessOrgType = "customer" | "participant";
+export interface AccessSettings {
+  orgTypes: AccessOrgType[];
+  registrationEnabled: boolean;
+  source: "admin" | "env";   // env — в админке ещё не сохраняли, действуют значения окружения
+  updatedAt: string | null;
+  updatedBy: string | null;
+  usersByOrgType: Record<AccessOrgType, number>;
+}
+
+export function useAccessSettings() {
+  return useQuery({
+    queryKey: ["admin-access-settings"],
+    queryFn: () => apiClient.get<AccessSettings>("/admin/access-settings").then((r) => r.data),
+    staleTime: 30_000,
+  });
+}
+export function useUpdateAccessSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orgTypes: AccessOrgType[]; registrationEnabled: boolean }) =>
+      apiClient.put<AccessSettings>("/admin/access-settings", input).then((r) => r.data),
+    onSuccess: (data) => qc.setQueryData(["admin-access-settings"], data),
+  });
+}
