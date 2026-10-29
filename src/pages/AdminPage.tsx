@@ -51,6 +51,7 @@ import {
   Receipt,
   AlertTriangle,
   Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ import { AdminAiUsageTab } from "./AdminAiUsagePage";
 import { KomusPricelistCard } from "@/components/admin/KomusPricelistCard";
 import { SsoProvidersCard } from "@/components/admin/SsoProvidersCard";
 import { AccessSettingsCard } from "@/components/admin/AccessSettingsCard";
+import { UserChatsDialog } from "@/components/admin/UserChatsDialog";
 import { useState, useEffect, useRef } from "react";
 
 // ── Role badge ────────────────────────────────────────────────
@@ -179,6 +181,8 @@ function UsersTab() {
   const verify = useVerifyUser();
   const block = useSetUserBlocked();
   const impersonate = useImpersonate();
+  // Чаты какого пользователя открыты в окне «Чаты пользователя».
+  const [chatsOf, setChatsOf] = useState<{ id: string; email: string; fullName?: string | null } | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -440,9 +444,18 @@ function UsersTab() {
                   {new Date(user.createdAt).toLocaleDateString("ru-RU")}
                 </TableCell>
 
-                {/* Действия: вход под пользователем + блокировка */}
+                {/* Действия: чаты, вход под пользователем, блокировка */}
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 text-[11px]"
+                      title="Переписка пользователя с ассистентом: просмотр и удаление"
+                      onClick={() => setChatsOf({ id: user.id, email: user.email, fullName: user.fullName })}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" /> Чаты
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -483,6 +496,7 @@ function UsersTab() {
           )}
         </TableBody>
       </Table>
+      {chatsOf && <UserChatsDialog user={chatsOf} open onOpenChange={(v) => { if (!v) setChatsOf(null); }} />}
     </div>
 
     <div className="flex items-center justify-between px-1">
@@ -1492,6 +1506,9 @@ const ACTION_LABELS: Record<string, string> = {
   "admin.user_block":              "Блокировка пользователя",
   "admin.user_unblock":            "Разблокировка пользователя",
   "admin.impersonate":             "Вход под пользователем",
+  "admin.chat_view":               "Просмотр чата пользователя",
+  "admin.chat_delete":             "Удаление чата пользователя",
+  "admin.chats_delete_all":        "Удаление всех чатов пользователя",
   "admin.model_change":            "Смена AI-модели",
   "admin.sync_rftorgi":            "Синхронизация РФТорги",
 };

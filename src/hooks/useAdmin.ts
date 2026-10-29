@@ -121,6 +121,61 @@ export function useImpersonate() {
   });
 }
 
+// ── Чаты пользователя (администратор) ───────────────────────────
+// Диалог — общий чат (sessionId; «legacy» — старые сообщения без сессии) или чат по закупке.
+export interface AdminUserChat {
+  sessionId: string | null;
+  procurementId: string | null;
+  title: string | null;
+  lastMessage: string;
+  lastAt: string;
+  count: number;
+  documents: number;
+  procurementTitle: string | null;
+  procurementNumber: string | null;
+}
+export interface AdminChatTranscript {
+  messages: { id: string; role: "user" | "assistant" | "system"; content: string; createdAt: string; modelUsed?: string | null }[];
+  documents: { id: string; fileName: string; fileSize: number; status: string; createdAt: string }[];
+}
+export type ChatKey = { sessionId: string | null; procurementId: string | null };
+
+const chatParams = (k: ChatKey) => (k.procurementId ? { procurementId: k.procurementId } : { sessionId: k.sessionId ?? "legacy" });
+
+export function useUserChats(userId: string | null) {
+  return useQuery({
+    queryKey: ["admin-user-chats", userId],
+    queryFn: async () => (await apiClient.get<{ chats: AdminUserChat[] }>(`/admin/users/${userId}/chats`)).data.chats,
+    enabled: !!userId,
+  });
+}
+
+export function useUserChatTranscript(userId: string | null, key: ChatKey | null) {
+  return useQuery({
+    queryKey: ["admin-user-chat", userId, key?.sessionId ?? null, key?.procurementId ?? null],
+    queryFn: async () => (await apiClient.get<AdminChatTranscript>(`/admin/users/${userId}/chats/messages`, { params: chatParams(key!) })).data,
+    enabled: !!userId && !!key,
+  });
+}
+
+export function useDeleteUserChat(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (k: ChatKey) => apiClient.delete(k.procurementId
+      ? `/admin/users/${userId}/chats/procurement/${k.procurementId}`
+      : `/admin/users/${userId}/chats/session/${k.sessionId ?? "legacy"}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-user-chats", userId] }),
+  });
+}
+
+export function useDeleteAllUserChats(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.delete(`/admin/users/${userId}/chats`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-user-chats", userId] }),
+  });
+}
+
 export function useSetActiveModel() {
   const qc = useQueryClient();
   return useMutation({
