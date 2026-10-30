@@ -1,5 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { tokenStorage } from './auth';
+import { tokenStorage, impersonation } from './auth';
 import type { AuthTokens } from '@/types/api';
 
 export const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
@@ -19,6 +19,31 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// ── Вход «под пользователем»: возврат в админку ──────────────
+// Токен «под пользователем» живёт 5 минут и не продлевается. Продлевать его обычным refresh
+// нельзя: cookie — администратора, сессия молча стала бы админской, а на экране оставался бы
+// пользователь. Поэтому по кнопке или по истечении — явно возвращаем администратора в его
+// сессию и в админку. Один refresh на все одновременные запросы: повтор уже использованного
+// refresh-токена сервер считает кражей сессии.
+let returning: Promise<void> | null = null;
+
+export function returnToAdmin(reason?: 'expired' | 'org_type'): Promise<void> {
+  returning ??= (async () => {
+    try {
+      const { data } = await axios.post<AuthTokens>(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+      // Метку «под пользователем» снимаем только теперь: пока refresh идёт, остальные
+      // запросы с 401 ждут этот же возврат, а не запускают обычный refresh.
+      impersonation.clear();
+      tokenStorage.setTokens(data.accessToken);
+      window.location.href = `/admin?tab=users${reason ? `&imp_end=${reason}` : ''}`;
+    } catch {
+      tokenStorage.clearTokens();
+      window.location.href = '/login';
+    }
+  })().finally(() => { returning = null; });
+  return returning;
+}
 
 // ── Response interceptor: обновить токен при 401 ─────────────
 
@@ -48,9 +73,19 @@ apiClient.interceptors.response.use(
     // Прод «только для заказчиков»: организация поставщика не допущена — сессия бесполезна,
     // выходим на страницу входа с объяснением (а не оставляем пустые страницы с ошибками).
     const code = (error.response?.data as { code?: string } | undefined)?.code;
+    const impersonating = !isAuthEndpoint && !!impersonation.get();
     if (error.response?.status === 403 && code === 'ORG_TYPE_NOT_ALLOWED' && !isAuthEndpoint) {
+      if (impersonating) {
+        await returnToAdmin('org_type');
+        return Promise.reject(error);
+      }
       tokenStorage.clearTokens();
       window.location.href = '/login?sso_error=org_type';
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status === 401 && impersonating) {
+      await returnToAdmin('expired');
       return Promise.reject(error);
     }
 

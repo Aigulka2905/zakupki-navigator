@@ -2,6 +2,7 @@ import { ReactNode, useState } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
+import { ImpersonationBanner } from "./ImpersonationBanner";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -30,50 +31,53 @@ export function AppLayout({ children, title, subtitle, headerRight }: AppLayoutP
       {/* Main area */}
       <div className="flex min-w-0 flex-1 flex-col">
 
-        {/* ── Header ──────────────────────────────────────────── */}
-        <header
-          className={cn(
-            "sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 px-4 md:px-5",
-            "border-b border-border/60 dark:border-white/[0.05]",
-            "bg-background/75 backdrop-blur-xl",
-            "transition-all duration-200",
-          )}
-        >
-          {/* Mobile / Tablet hamburger */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-            onClick={() => setCollapsed((v) => !v)}
-            aria-label="Меню"
-          >
-            <Menu className="h-4 w-4" />
-          </Button>
-
-          {/* Page title */}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-foreground">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="truncate text-xs text-muted-foreground/70">{subtitle}</p>
+        {/* ── Header (и полоса «Вы вошли как …» у администратора под пользователем) ── */}
+        <div className="sticky top-0 z-30">
+          <ImpersonationBanner />
+          <header
+            className={cn(
+              "flex h-16 shrink-0 items-center gap-3 px-4 md:px-5",
+              "border-b border-border/60 dark:border-white/[0.05]",
+              "bg-background/75 backdrop-blur-xl",
+              "transition-all duration-200",
             )}
-          </div>
+          >
+            {/* Mobile / Tablet hamburger */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label="Меню"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
 
-          {/* Right controls */}
-          <div className="flex shrink-0 items-center gap-1">
-            {headerRight}
-
-            <ThemeToggle />
-
-            <NotificationBell />
-
-            {/* User avatar */}
-            <div className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-[11px] font-bold text-white shadow-md shadow-indigo-500/30 ring-2 ring-background">
-              {initials}
+            {/* Page title */}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-foreground">
+                {title}
+              </h1>
+              {subtitle && (
+                <p className="truncate text-xs text-muted-foreground/70">{subtitle}</p>
+              )}
             </div>
-          </div>
-        </header>
+
+            {/* Right controls */}
+            <div className="flex shrink-0 items-center gap-1">
+              {headerRight}
+
+              <ThemeToggle />
+
+              <NotificationBell />
+
+              {/* User avatar */}
+              <div className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-[11px] font-bold text-white shadow-md shadow-indigo-500/30 ring-2 ring-background">
+                {initials}
+              </div>
+            </div>
+          </header>
+        </div>
 
         {/* ── Content ─────────────────────────────────────────── */}
         <main className="flex-1">{children}</main>

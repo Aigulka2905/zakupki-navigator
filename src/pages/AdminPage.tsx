@@ -88,6 +88,7 @@ import type { LogEntry, LogLevel, AuditEntry } from "@/hooks/useAdmin";
 import { toast } from "sonner";
 import type { UserRole, SubscriptionPlan } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { actionLabel } from "@/lib/audit-actions";
 import { AdminAiUsageTab } from "./AdminAiUsagePage";
 import { KomusPricelistCard } from "@/components/admin/KomusPricelistCard";
 import { SsoProvidersCard } from "@/components/admin/SsoProvidersCard";
@@ -211,7 +212,7 @@ function UsersTab() {
   };
 
   const onImpersonate = (id: string, email: string) => {
-    if (!window.confirm(`Войти под пользователем ${email}?\nТекущая админ-сессия будет заменена. Чтобы вернуться, выйдите и войдите снова как администратор.`)) return;
+    if (!window.confirm(`Войти под пользователем ${email}?\nВход действует 5 минут. Вернуться в админку — кнопкой в полосе вверху страницы.`)) return;
     impersonate.mutate(id, {
       onError: (e: unknown) => toast.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Не удалось войти под пользователем"),
     });
@@ -1484,35 +1485,6 @@ const ACTION_CATEGORIES = [
   { value: "admin",        label: "Администр." },
 ] as const;
 
-const ACTION_LABELS: Record<string, string> = {
-  "auth.login":                    "Вход в систему",
-  "auth.login_failed":             "Неудачный вход",
-  "auth.email_verified":           "Подтверждение email",
-  "auth.password_reset_requested": "Запрос сброса пароля",
-  "auth.password_reset":           "Сброс пароля",
-  "procurement.create":            "Создание закупки",
-  "procurement.update":            "Изменение закупки",
-  "procurement.delete":            "Удаление закупки",
-  "document.create":               "Добавление документа",
-  "document.update":               "Изменение документа",
-  "document.delete":               "Удаление документа",
-  "org.update":                    "Обновление профиля",
-  "org_document.upload":           "Загрузка документа",
-  "org_document.delete":           "Удаление документа",
-  "analysis.upload":               "Анализ документа",
-  "admin.role_update":             "Изменение роли",
-  "admin.plan_update":             "Изменение тарифа",
-  "admin.user_verify":             "Подтверждение аккаунта",
-  "admin.user_block":              "Блокировка пользователя",
-  "admin.user_unblock":            "Разблокировка пользователя",
-  "admin.impersonate":             "Вход под пользователем",
-  "admin.chat_view":               "Просмотр чата пользователя",
-  "admin.chat_delete":             "Удаление чата пользователя",
-  "admin.chats_delete_all":        "Удаление всех чатов пользователя",
-  "admin.model_change":            "Смена AI-модели",
-  "admin.sync_rftorgi":            "Синхронизация РФТорги",
-};
-
 const ACTION_CATEGORY_STYLE: Record<string, string> = {
   auth:        "bg-slate-500/10 text-slate-400 border-slate-500/20",
   procurement: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
@@ -1657,7 +1629,7 @@ function AuditTab() {
                           ACTION_CATEGORY_STYLE[actionCategory(entry.action)] ?? "bg-slate-500/10 text-slate-400",
                         )}
                       >
-                        {ACTION_LABELS[entry.action] ?? entry.action}
+                        {actionLabel(entry.action)}
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3 text-muted-foreground hidden sm:table-cell">
@@ -1710,7 +1682,22 @@ function AuditTab() {
 
 // ── Page ──────────────────────────────────────────────────────
 
+// Возврат из входа «под пользователем» (returnToAdmin): объяснить, почему администратор снова здесь.
+const IMPERSONATION_END: Record<string, string> = {
+  expired: "Время входа под пользователем истекло — вы снова в админке.",
+  org_type: "Этот пользователь не допущен к сервису (доступ — только заказчикам). Вы снова в админке.",
+};
+
 export default function AdminPage() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get("imp_end");
+    if (!reason) return;
+    if (IMPERSONATION_END[reason]) toast.info(IMPERSONATION_END[reason]);
+    params.delete("imp_end");
+    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+  }, []);
+
   return (
     <AppLayout title="Администрирование" subtitle="Управление пользователями и параметрами системы">
       <div className="p-4 md:p-6 space-y-6">

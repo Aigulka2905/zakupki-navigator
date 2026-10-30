@@ -61,6 +61,12 @@ describe("UserChatsDialog", () => {
     expect(window.confirm).toHaveBeenCalled();
   });
 
+  it("из «Истории» — сразу открыт нужный диалог", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><UserChatsDialog user={USER} open onOpenChange={() => {}} initial={{ sessionId: "s1", procurementId: null }} /></QueryClientProvider>);
+    expect(await screen.findByText("Сроки устанавливаются положением о закупке.")).toBeInTheDocument();
+  });
+
   it("чат по закупке удаляется по номеру закупки; без сессии — как legacy", async () => {
     renderDialog();
     fireEvent.click(await screen.findByText("Какой срок поставки?"));

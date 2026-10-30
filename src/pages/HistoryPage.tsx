@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -20,60 +19,56 @@ import {
   CheckCircle2,
   Loader2,
   ChevronRight,
-  FileText,
   Clock,
+  Calculator,
+  Gavel,
+  Package,
+  Activity as ActivityIcon,
+  ShieldCheck,
+  User as UserIcon,
 } from "lucide-react";
 import { Reveal } from "@/components/Reveal";
-import apiClient from "@/lib/api-client";
+import { UserChatsDialog } from "@/components/admin/UserChatsDialog";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useAdminUsers, type ChatKey } from "@/hooks/useAdmin";
+import { useHistory, type HistoryItem, type HistoryActor, type HistoryType } from "@/hooks/useHistory";
+import { actionLabel, actionDetails, actionHref } from "@/lib/audit-actions";
 import { sessionTitle } from "@/lib/chat-session";
+
+// «История»: у пользователя — его чаты, анализы, расчёты, проверки и другие действия; у
+// администратора — все действия в системе с тем, кто их сделал. Администратор, вошедший
+// «под пользователем», видит историю этого пользователя (так решает сервер).
 
 // ── Types ─────────────────────────────────────────────────────
 
-interface ChatSession {
-  sessionId: string | null;
-  procurementId: string | null;
-  title?: string | null;
-  lastMessage: string;
-  lastAt: string;
-  count: number;
-  procurementTitle: string | null;
-  procurementNumber: string | null;
-}
+type RowKind = "chat" | "analysis" | "nmck" | "bids" | "packages" | "other" | "admin";
 
-interface AnalysisItem {
+interface Row {
   id: string;
-  status: "processing" | "completed" | "failed";
-  violations: Array<{ message: string }> | null;
-  recommendations: string[] | null;
-  originalFileName: string | null;
-  createdAt: string;
-}
-
-type ActivityKind = "chat" | "analysis";
-
-interface Activity {
-  id: string;
-  kind: ActivityKind;
+  kind: RowKind;
   title: string;
   description: string;
   at: Date;
-  href: string;
+  href?: string | null;
+  onOpen?: () => void;
   meta?: string;
   status?: string;
   violationCount?: number;
+  /** undefined — история пользователя (кто сделал, не показываем); null — система. */
+  actor?: HistoryActor | null;
+  viaAdmin?: { fullName: string | null; email: string | null } | null;
 }
 
-// ── API ───────────────────────────────────────────────────────
-
-async function fetchSessions(): Promise<ChatSession[]> {
-  const { data } = await apiClient.get<ChatSession[]>("/assistant/sessions");
-  return data;
-}
-
-async function fetchAnalyses(): Promise<AnalysisItem[]> {
-  const { data } = await apiClient.get<AnalysisItem[]>("/analysis");
-  return data;
-}
+const TYPE_OPTIONS: { value: HistoryType; label: string; adminOnly?: boolean }[] = [
+  { value: "all",      label: "Все действия" },
+  { value: "chat",     label: "Чаты" },
+  { value: "analysis", label: "Анализ документов" },
+  { value: "nmck",     label: "Расчёт НМЦ" },
+  { value: "bids",     label: "Проверка и оценка заявок" },
+  { value: "packages", label: "Пакеты документов" },
+  { value: "other",    label: "Прочее" },
+  { value: "admin",    label: "Администрирование", adminOnly: true },
+];
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -92,60 +87,6 @@ function fmtDate(date: Date): string {
   return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function buildActivities(sessions: ChatSession[], analyses: AnalysisItem[]): Activity[] {
-  const result: Activity[] = [];
-
-  for (const s of sessions) {
-    const title = s.procurementTitle
-      ? truncate(s.procurementTitle, 70)
-      : sessionTitle(s)
-      ? truncate(sessionTitle(s), 70)
-      : "Общий чат";
-
-    const href = s.procurementId
-      ? `/procurements/${s.procurementId}`
-      : s.sessionId
-      ? `/chat?session=${s.sessionId}`
-      : "/chat";
-
-    result.push({
-      id: `chat-${s.procurementId ?? s.sessionId ?? "legacy"}`,
-      kind: "chat",
-      title,
-      description: `${s.count} ${pluralMessages(s.count)}`,
-      at: new Date(s.lastAt),
-      href,
-      meta: s.procurementNumber ?? undefined,
-    });
-  }
-
-  for (const a of analyses) {
-    const name = a.originalFileName ?? 'Документ';
-    const vCount = (a.violations ?? []).length;
-    const description =
-      a.status === "processing"
-        ? "Анализируется…"
-        : a.status === "failed"
-        ? "Ошибка анализа"
-        : vCount > 0
-        ? `${vCount} ${pluralViolations(vCount)}`
-        : "Нарушений не обнаружено";
-
-    result.push({
-      id: `analysis-${a.id}`,
-      kind: "analysis",
-      title: name,
-      description,
-      at: new Date(a.createdAt),
-      href: `/doc-review?id=${a.id}`,
-      status: a.status,
-      violationCount: vCount,
-    });
-  }
-
-  return result.sort((a, b) => b.at.getTime() - a.at.getTime());
-}
-
 function pluralMessages(n: number): string {
   if (n % 10 === 1 && n % 100 !== 11) return "сообщение";
   if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return "сообщения";
@@ -158,16 +99,91 @@ function pluralViolations(n: number): string {
   return "нарушений";
 }
 
+function actionKind(action: string): RowKind {
+  if (action.startsWith("nmck.")) return "nmck";
+  if (action.startsWith("bid_check.") || action.startsWith("bid_evaluation.")) return "bids";
+  if (action.startsWith("upload_batch.")) return "packages";
+  if (action.startsWith("admin.")) return "admin";
+  return "other";
+}
+
+const actorLine = (a: HistoryActor) => [a.fullName, a.organization, a.email].filter(Boolean).join(" · ");
+
+// Строка истории. У администратора: кто сделал; чат открывается перепиской пользователя
+// (ссылка /chat открыла бы чат самого администратора), чужие расчёты и проверки по ссылке
+// не открываются.
+function toRow(item: HistoryItem, all: boolean, openChat: (user: HistoryActor, key: ChatKey) => void): Row {
+  const base = { id: item.id, at: new Date(item.at), ...(all && { actor: item.user ?? null }) };
+
+  if (item.kind === "chat") {
+    const c = item.chat;
+    const title = c.procurementTitle
+      ? truncate(c.procurementTitle, 70)
+      : truncate(sessionTitle({ title: c.title, lastMessage: "" }), 70) || "Общий чат";
+    const key = { sessionId: c.sessionId, procurementId: c.procurementId };
+    return {
+      ...base,
+      kind: "chat",
+      title,
+      description: `${c.count} ${pluralMessages(c.count)}`,
+      meta: c.procurementNumber ?? undefined,
+      ...(all
+        ? { onOpen: item.user ? () => openChat(item.user!, key) : undefined }
+        : { href: c.procurementId ? `/procurements/${c.procurementId}` : c.sessionId ? `/chat?session=${c.sessionId}` : "/chat" }),
+    };
+  }
+
+  if (item.kind === "analysis") {
+    const a = item.analysis;
+    const description =
+      a.status === "processing" ? "Анализируется…"
+      : a.status === "failed" ? "Ошибка анализа"
+      : a.violations > 0 ? `${a.violations} ${pluralViolations(a.violations)}`
+      : "Нарушений не обнаружено";
+    return {
+      ...base,
+      kind: "analysis",
+      title: a.fileName ?? "Документ",
+      description,
+      status: a.status,
+      violationCount: a.violations,
+      href: all ? null : `/doc-review?id=${a.id}`,
+    };
+  }
+
+  return {
+    ...base,
+    kind: actionKind(item.action),
+    title: actionLabel(item.action) + (item.entityTitle ? ` «${item.entityTitle}»` : ""),
+    description: actionDetails(item.details) ?? "",
+    href: all ? null : actionHref(item.action, item.entityId),
+    viaAdmin: item.viaAdmin,
+  };
+}
+
 // ── Activity row ──────────────────────────────────────────────
 
-const kindMeta: Record<ActivityKind, { icon: typeof MessageSquare; bg: string; color: string; label: string }> = {
+const kindMeta: Record<RowKind, { icon: typeof MessageSquare; bg: string; color: string; label: string }> = {
   chat:     { icon: MessageSquare, bg: "bg-indigo-500/10",  color: "text-indigo-400",  label: "Чат" },
   analysis: { icon: FileSearch,    bg: "bg-amber-500/10",   color: "text-amber-400",   label: "Анализ" },
+  nmck:     { icon: Calculator,    bg: "bg-emerald-500/10", color: "text-emerald-400", label: "НМЦ" },
+  bids:     { icon: Gavel,         bg: "bg-sky-500/10",     color: "text-sky-400",     label: "Заявки" },
+  packages: { icon: Package,       bg: "bg-violet-500/10",  color: "text-violet-400",  label: "Пакет" },
+  other:    { icon: ActivityIcon,  bg: "bg-slate-500/10",   color: "text-slate-400",   label: "Действие" },
+  admin:    { icon: ShieldCheck,   bg: "bg-red-500/10",     color: "text-red-400",     label: "Админ" },
 };
 
-function ActivityRow({ item }: { item: Activity }) {
+function RowShell({ row, children }: { row: Row; children: ReactNode }) {
+  const cls = "group block w-full text-left";
+  if (row.href) return <Link to={row.href} className={cls}>{children}</Link>;
+  if (row.onOpen) return <button type="button" onClick={row.onOpen} className={cls}>{children}</button>;
+  return <div className={cls}>{children}</div>;
+}
+
+function ActivityRow({ item }: { item: Row }) {
   const km = kindMeta[item.kind];
   const Icon = km.icon;
+  const clickable = !!(item.href || item.onOpen);
 
   const statusIcon =
     item.kind === "analysis" ? (
@@ -182,26 +198,44 @@ function ActivityRow({ item }: { item: Activity }) {
       )
     ) : null;
 
+  const via = item.viaAdmin;
+  const viaName = via ? [via.fullName, via.email].filter(Boolean).join(", ") : "";
+
   return (
-    <Link to={item.href} className="group block">
-      <div className="flex items-center gap-3 rounded-xl border border-border/40 bg-card/60 px-4 py-3.5 transition-all hover:border-indigo-500/30 hover:bg-card/80">
+    <RowShell row={item}>
+      <div className={`flex items-center gap-3 rounded-xl border border-border/40 bg-card/60 px-4 py-3.5 transition-all ${clickable ? "hover:border-indigo-500/30 hover:bg-card/80" : ""}`}>
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${km.bg}`}>
           <Icon className={`h-4.5 w-4.5 ${km.color}`} style={{ width: 18, height: 18 }} />
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-[13px] font-medium text-foreground group-hover:text-indigo-400 transition-colors">
+            <span className={`truncate text-[13px] font-medium text-foreground transition-colors ${clickable ? "group-hover:text-indigo-400" : ""}`}>
               {item.title}
             </span>
             {item.meta && (
               <Badge variant="outline" className="text-[10px] shrink-0">{item.meta}</Badge>
             )}
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[12px] text-muted-foreground/70">
-            {statusIcon}
-            <span>{item.description}</span>
-          </div>
+          {(item.description || statusIcon) && (
+            <div className="mt-0.5 flex items-center gap-2 text-[12px] text-muted-foreground/70">
+              {statusIcon}
+              <span>{item.description}</span>
+            </div>
+          )}
+          {item.actor !== undefined && (
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <UserIcon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{item.actor ? actorLine(item.actor) : "Система"}</span>
+            </div>
+          )}
+          {via && (
+            <div className="mt-1 inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-500 dark:text-red-400">
+              <ShieldCheck className="h-3 w-3" />
+              <span>Сделал администратор</span>
+              {viaName && <span>({viaName})</span>}
+            </div>
+          )}
         </div>
 
         <div className="shrink-0 text-right">
@@ -211,19 +245,21 @@ function ActivityRow({ item }: { item: Activity }) {
           </div>
         </div>
 
-        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 group-hover:text-indigo-400 transition-colors" />
+        {clickable && (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 group-hover:text-indigo-400 transition-colors" />
+        )}
       </div>
-    </Link>
+    </RowShell>
   );
 }
 
 // ── Date group header ─────────────────────────────────────────
 
-function groupByDay(activities: Activity[]): Array<{ label: string; items: Activity[] }> {
-  const groups = new Map<string, Activity[]>();
+function groupByDay(rows: Row[]): Array<{ label: string; items: Row[] }> {
+  const groups = new Map<string, Row[]>();
   const now = new Date();
 
-  for (const a of activities) {
+  for (const a of rows) {
     const d = a.at;
     const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
     let label: string;
@@ -243,39 +279,29 @@ function groupByDay(activities: Activity[]): Array<{ label: string; items: Activ
 
 const HistoryPage = () => {
   const [query, setQuery]   = useState("");
-  const [filter, setFilter] = useState<string>("all");
+  const [type, setType]     = useState<HistoryType>("all");
+  const [userId, setUserId] = useState<string>("");
+  const [chatOf, setChatOf] = useState<{ user: HistoryActor; key: ChatKey } | null>(null);
 
-  const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
-    queryKey: ["chat-sessions"],
-    queryFn: fetchSessions,
-    staleTime: 30_000,
-  });
+  const { data: me } = useCurrentUser();
+  const isAdmin = me?.role === "admin";
+  const { data: users = [] } = useAdminUsers(isAdmin);
 
-  const { data: analyses = [], isLoading: analysesLoading } = useQuery({
-    queryKey: ["analysis-history"],
-    queryFn: fetchAnalyses,
-    staleTime: 30_000,
-  });
+  const history = useHistory({ type, userId: isAdmin ? userId : null });
+  const pages = history.data?.pages ?? [];
+  const all = pages[0]?.scope === "all";
+  const rows = pages.flatMap((p) => p.items).map((item) => toRow(item, all, (user, key) => setChatOf({ user, key })));
 
-  const isLoading = sessionsLoading || analysesLoading;
-
-  const all = buildActivities(sessions, analyses);
-
-  const filtered = all.filter((a) => {
-    const matchesFilter = filter === "all" || a.kind === filter;
-    const matchesQuery  =
-      !query ||
-      a.title.toLowerCase().includes(query.toLowerCase()) ||
-      a.description.toLowerCase().includes(query.toLowerCase());
-    return matchesFilter && matchesQuery;
-  });
-
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? rows.filter((r) => [r.title, r.description, r.actor && actorLine(r.actor)].filter(Boolean).join(" ").toLowerCase().includes(q))
+    : rows;
   const groups = groupByDay(filtered);
 
   return (
     <AppLayout
       title="История"
-      subtitle="Журнал чатов и анализа документов"
+      subtitle={all ? "Все действия в системе: кто, что и когда" : "Ваши чаты, проверки, расчёты и другие действия"}
     >
       <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
 
@@ -291,56 +317,54 @@ const HistoryPage = () => {
                 className="pl-9 text-[13px]"
               />
             </div>
-            <Select value={filter} onValueChange={setFilter}>
-              <SelectTrigger className="sm:w-48 text-[13px]">
+            {isAdmin && (
+              <Select value={userId || "all"} onValueChange={(v) => setUserId(v === "all" ? "" : v)}>
+                <SelectTrigger className="sm:w-52 text-[13px]" aria-label="Пользователь">
+                  <SelectValue placeholder="Все пользователи" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все пользователи</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.fullName || u.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={type} onValueChange={(v) => setType(v as HistoryType)}>
+              <SelectTrigger className="sm:w-56 text-[13px]" aria-label="Тип действия">
                 <SelectValue placeholder="Тип действия" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все действия</SelectItem>
-                <SelectItem value="chat">Чаты</SelectItem>
-                <SelectItem value="analysis">Анализ документов</SelectItem>
+                {TYPE_OPTIONS.filter((o) => !o.adminOnly || isAdmin).map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </Reveal>
 
-        {/* Stats chips */}
-        {!isLoading && all.length > 0 && (
-          <Reveal direction="up" delay={0.05}>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { kind: "all",      label: "Всего",   count: all.length,                                  bg: "bg-muted/60",         text: "text-muted-foreground" },
-                { kind: "chat",     label: "Чатов",   count: all.filter(a => a.kind === "chat").length,   bg: "bg-indigo-500/10",    text: "text-indigo-400" },
-                { kind: "analysis", label: "Анализов",count: all.filter(a => a.kind === "analysis").length, bg: "bg-amber-500/10", text: "text-amber-400" },
-              ].map(({ kind, label, count, bg, text }) => (
-                <button
-                  key={kind}
-                  onClick={() => setFilter(kind)}
-                  className={`rounded-full px-3 py-1 text-[12px] font-medium transition-all ${bg} ${text} ${filter === kind ? "ring-1 ring-inset ring-current" : "opacity-70 hover:opacity-100"}`}
-                >
-                  {label}: {count}
-                </button>
-              ))}
-            </div>
-          </Reveal>
-        )}
-
         {/* Content */}
-        {isLoading ? (
+        {history.isLoading ? (
           <div className="flex items-center justify-center py-24 text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             <span className="text-[13px]">Загрузка истории…</span>
+          </div>
+        ) : history.isError ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/50 py-20 text-center">
+            <AlertTriangle className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-[13px] font-medium text-muted-foreground">Не удалось загрузить историю</p>
+            <Button size="sm" variant="outline" onClick={() => void history.refetch()}>Повторить</Button>
           </div>
         ) : filtered.length === 0 ? (
           <Reveal direction="scale">
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/50 py-20 text-center">
               <Clock className="h-10 w-10 text-muted-foreground/30" />
               <p className="text-[13px] font-medium text-muted-foreground">
-                {query || filter !== "all" ? "Ничего не найдено" : "История пуста"}
+                {q || type !== "all" || userId ? "Ничего не найдено" : "История пуста"}
               </p>
-              {!query && filter === "all" && (
+              {!q && type === "all" && !userId && (
                 <p className="text-[12px] text-muted-foreground/60">
-                  Здесь появятся чаты и результаты анализа документов
+                  Здесь появятся чаты, анализ документов, расчёты НМЦ, проверки заявок и другие действия
                 </p>
               )}
             </div>
@@ -368,19 +392,24 @@ const HistoryPage = () => {
           </div>
         )}
 
-        {/* Empty state for analyses tab with hint */}
-        {!isLoading && filter === "analysis" && all.filter(a => a.kind === "analysis").length > 0 && filtered.length > 0 && (
-          <Reveal direction="up" delay={0.1}>
-            <div className="flex items-center gap-2 rounded-xl border border-border/30 bg-muted/20 px-4 py-3">
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-              <p className="text-[12px] text-muted-foreground/70">
-                Нажмите на запись, чтобы перейти к результатам анализа
-              </p>
-            </div>
-          </Reveal>
+        {history.hasNextPage && (
+          <div className="flex justify-center">
+            <Button variant="outline" size="sm" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
+              {history.isFetchingNextPage && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Показать ещё
+            </Button>
+          </div>
         )}
-
       </div>
+
+      {chatOf && (
+        <UserChatsDialog
+          user={chatOf.user}
+          initial={chatOf.key}
+          open
+          onOpenChange={(open) => { if (!open) setChatOf(null); }}
+        />
+      )}
     </AppLayout>
   );
 };

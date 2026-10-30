@@ -16,6 +16,8 @@ interface Props {
   user: { id: string; email: string; fullName?: string | null };
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Диалог, открытый сразу (из «Истории»). */
+  initial?: ChatKey | null;
 }
 
 const keyOf = (c: AdminUserChat): ChatKey => ({ sessionId: c.sessionId, procurementId: c.procurementId });
@@ -26,8 +28,8 @@ const plural = (n: number, one: string, few: string, many: string) => {
   return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
 };
 
-export function UserChatsDialog({ user, open, onOpenChange }: Props) {
-  const [selected, setSelected] = useState<ChatKey | null>(null);
+export function UserChatsDialog({ user, open, onOpenChange, initial = null }: Props) {
+  const [selected, setSelected] = useState<ChatKey | null>(initial);
   const { data: chats = [], isLoading } = useUserChats(open ? user.id : null);
   const transcript = useUserChatTranscript(open ? user.id : null, selected);
   const deleteChat = useDeleteUserChat(user.id);

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
-import { tokenStorage } from "@/lib/auth";
+import { tokenStorage, impersonation, type ImpersonatedUser } from "@/lib/auth";
 import type { AdminUser, AdminStats, SystemInfo } from "@/types/api";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -41,11 +41,12 @@ async function fetchSystemInfo(): Promise<SystemInfo> {
   return data;
 }
 
-export function useAdminUsers() {
+export function useAdminUsers(enabled = true) {
   return useQuery({
     queryKey: ["admin-users"],
     queryFn: fetchAdminUsers,
     staleTime: 30_000,
+    enabled,
   });
 }
 
@@ -109,12 +110,16 @@ export function useSetUserBlocked() {
 
 // Вход под пользователем: получаем его access-токен, подменяем сессию и
 // перезагружаем приложение с чистого листа (жёсткая навигация сбрасывает всё
-// состояние react-query от админа).
+// состояние react-query от админа). Метка «под кем» — для полосы «Вы вошли как …»
+// и возврата в админку (см. returnToAdmin).
 export function useImpersonate() {
   return useMutation({
     mutationFn: (userId: string) =>
-      apiClient.post<{ accessToken: string }>(`/admin/users/${userId}/impersonate`).then((r) => r.data),
+      apiClient
+        .post<{ accessToken: string; user: ImpersonatedUser }>(`/admin/users/${userId}/impersonate`)
+        .then((r) => r.data),
     onSuccess: (data) => {
+      impersonation.start(data.user);
       tokenStorage.setTokens(data.accessToken);
       window.location.href = "/";
     },
